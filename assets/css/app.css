@@ -100,7 +100,9 @@ pre {
 }
 
 .topbar__brand { font-weight: 700; letter-spacing: -0.01em; }
-.topbar__nav { display: none; margin-left: auto; align-items: center; gap: 0.25rem; }
+/* Nach rechts geschoben wird der Sprachumschalter (margin-left: auto), der
+   direkt davor steht – die Navigation schließt dann daran an. */
+.topbar__nav { display: none; align-items: center; gap: 0.25rem; }
 
 .topbar__link {
     padding: 0.4rem 0.7rem;
@@ -112,6 +114,37 @@ pre {
 .topbar__link.is-active { background: var(--surface-2); color: var(--text); }
 
 .topbar__timer { flex: 1; min-width: 0; }
+
+/* -- Sprachumschalter ------------------------------------------------------ */
+
+.langswitch {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--surface-2);
+}
+
+.langswitch__btn {
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+.langswitch__btn:hover { color: var(--text); }
+.langswitch__btn.is-active { background: var(--accent); color: #fff; }
+
+/* Im Kopf sitzt er zwischen laufendem Timer und Navigation … */
+.topbar__lang { margin-left: auto; margin-right: 0.5rem; }
+
+/* … im Anmeldefeld mittig unter dem Button. */
+.login__lang { align-self: center; margin-top: 0.5rem; }
 
 .topbar__running {
     display: inline-flex;

@@ -6,10 +6,14 @@ namespace VT\Auth;
 use VT\Db\Database;
 use VT\Http\HttpException;
 use VT\Http\Request;
+use VT\Settings;
 use VT\Support\Clock;
 
 final class Auth
 {
+    /** Unterstützte Oberflächensprachen. */
+    public const LANGS = ['de', 'en'];
+
     private static ?User $user = null;
     private static bool $resolved = false;
 
@@ -136,6 +140,52 @@ final class Auth
         self::$resolved = true;
 
         return self::$user;
+    }
+
+    // -- Oberflächensprache -------------------------------------------------
+
+    /**
+     * Sprache der Oberfläche für den angemeldeten Benutzer.
+     *
+     * Kundenzugänge folgen dem Kundenprofil (`clients.lang`) – dieselbe
+     * Sprache also, in der ihr Leistungsnachweis gedruckt wird. Für
+     * Administratoren gibt es keine zweite Ebene, dort steht sie in den
+     * Einstellungen. Ohne Anmeldung: Deutsch.
+     */
+    public static function lang(): string
+    {
+        $user = self::$user;
+
+        if ($user !== null && $user->isClient() && $user->clientId !== null) {
+            $lang = (string) Database::value(
+                'SELECT lang FROM clients WHERE id = :id',
+                ['id' => $user->clientId]
+            );
+        } else {
+            $lang = (string) Settings::get('ui_lang', 'de');
+        }
+
+        return in_array($lang, self::LANGS, true) ? $lang : 'de';
+    }
+
+    /** Speichert die Sprache an derselben Stelle, aus der lang() sie liest. */
+    public static function setLang(string $lang): string
+    {
+        if (!in_array($lang, self::LANGS, true)) {
+            throw HttpException::validation(['lang' => 'Unbekannte Sprache.']);
+        }
+
+        $user = self::require();
+        if ($user->isClient() && $user->clientId !== null) {
+            Database::update('clients', $user->clientId, [
+                'lang'       => $lang,
+                'updated_at' => Clock::now(),
+            ]);
+        } else {
+            Settings::set('ui_lang', $lang);
+        }
+
+        return $lang;
     }
 
     public static function logout(): void

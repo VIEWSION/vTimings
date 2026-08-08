@@ -2,16 +2,15 @@
 
 import { api, ApiError } from '../api.js';
 import { state, loadTimers, loadRecent, invalidateTree } from '../store.js';
+import { t } from '../i18n.js';
 import { bindOnce, dialog, pickSubproject, toast, toastError, confirmDialog } from '../ui.js';
-import { clock, esc, hhmm, html, money, todayISO, dayLabel, localISO } from '../util.js';
+import { clock, hhmm, html, money, todayISO, dayLabel, localISO } from '../util.js';
 
 let ticker = null;
 
 export const timerView = {
-    title: 'Timer',
-
     async render(root) {
-        root.innerHTML = '<div class="loading">Lade …</div>';
+        root.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
         const [, , today] = await Promise.all([
             loadTimers(),
@@ -24,8 +23,8 @@ export const timerView = {
                 <div id="running"></div>
                 <section class="card">
                     <header class="card__head">
-                        <h2>Schnellwahl</h2>
-                        <button class="btn btn--ghost" id="pick-other">Anderes Projekt …</button>
+                        <h2>${t('timer.quick')}</h2>
+                        <button class="btn btn--ghost" id="pick-other">${t('timer.otherProject')}</button>
                     </header>
                     <ul class="quicklist">${state.recent.map(quickItem)}</ul>
                 </section>
@@ -37,7 +36,7 @@ export const timerView = {
                     </header>
                     ${today.days.length
                         ? html`<ul class="entrylist">${today.days[0].entries.map(entryRow)}</ul>`
-                        : '<p class="muted card__body">Heute noch nichts erfasst.</p>'}
+                        : html`<p class="muted card__body">${t('timer.nothingToday')}</p>`}
                 </section>
             </section>`;
 
@@ -87,8 +86,8 @@ function drawRunning(root) {
     if (!state.timers.length) {
         host.innerHTML = html`
             <div class="card card--idle">
-                <p class="muted">Kein Timer läuft.</p>
-                <button class="btn btn--primary btn--big" id="start-any">Aufzeichnung starten</button>
+                <p class="muted">${t('timer.idle')}</p>
+                <button class="btn btn--primary btn--big" id="start-any">${t('timer.start')}</button>
             </div>`;
         return;
     }
@@ -100,13 +99,15 @@ function drawRunning(root) {
                     <strong>${timer.subproject_name}</strong>
                     <span class="muted">${timer.client_name} · ${timer.project_name}</span>
                 </span>
-                <button class="icon-btn" data-edit-timer="${timer.id}" title="Timer bearbeiten">✎</button>
+                <button class="icon-btn" data-edit-timer="${timer.id}" title="${t('timer.edit')}">✎</button>
             </div>
             <div class="running__clock" data-since="${timer.started_at}">${clock(timer.elapsed_sec)}</div>
-            <div class="running__meta muted">seit ${timer.start_time}${timer.note ? ' · ' + timer.note : ''}</div>
+            <div class="running__meta muted">
+                ${t('timer.since', { time: timer.start_time })}${timer.note ? ' · ' + timer.note : ''}
+            </div>
             <div class="running__actions">
-                <button class="btn btn--primary btn--big" data-stop="${timer.id}">Stoppen</button>
-                <button class="btn btn--ghost" data-discard="${timer.id}">Verwerfen</button>
+                <button class="btn btn--primary btn--big" data-stop="${timer.id}">${t('timer.stop')}</button>
+                <button class="btn btn--ghost" data-discard="${timer.id}">${t('timer.discard')}</button>
             </div>
         </div>`).join('');
 }
@@ -121,7 +122,7 @@ function bind(root) {
         if (start) return startTimer(root, Number(start.dataset.start));
 
         if (event.target.closest('#start-any, #pick-other')) {
-            const id = await pickSubproject({ title: 'Womit fängst du an?' });
+            const id = await pickSubproject({ title: t('timer.pickTitle') });
             if (id) await startTimer(root, id);
             return;
         }
@@ -147,14 +148,16 @@ async function startTimer(root, subprojectId, onConflict) {
         if (error instanceof ApiError && error.code === 'timer_running') {
             const running = error.details.running?.[0];
             const choice = await dialog({
-                title: 'Es läuft bereits ein Timer',
+                title: t('timer.conflictTitle'),
                 body: html`<p><strong>${running?.subproject_name}</strong><br>
-                    <span class="muted">${running?.client_name} · seit ${running?.start_time}</span></p>
-                    <p>Was soll damit passieren?</p>`,
+                    <span class="muted">
+                        ${t('timer.conflictSince', { client: running?.client_name, time: running?.start_time })}
+                    </span></p>
+                    <p>${t('timer.conflictQuestion')}</p>`,
                 buttons: [
-                    { label: 'Abbrechen', value: null },
-                    { label: 'Parallel laufen lassen', value: 'parallel' },
-                    { label: 'Stoppen und neu starten', value: 'stop', kind: 'primary' },
+                    { label: t('common.cancel'), value: null },
+                    { label: t('timer.conflictParallel'), value: 'parallel' },
+                    { label: t('timer.conflictReplace'), value: 'stop', kind: 'primary' },
                 ],
             });
             if (choice) await startTimer(root, subprojectId, choice);
@@ -171,17 +174,17 @@ async function stopTimer(root, id) {
     node.innerHTML = html`
         <p class="muted">${timer?.path} · ${timer?.elapsed_hhmm}</p>
         <label class="field">
-            <span class="field__label">Was hast du gemacht?</span>
+            <span class="field__label">${t('timer.stopQuestion')}</span>
             <textarea class="input" name="note" rows="5"
-                placeholder="Stichpunkte …">${timer?.note || ''}</textarea>
+                placeholder="${t('timer.stopPlaceholder')}">${timer?.note || ''}</textarea>
         </label>`;
 
     const result = await dialog({
-        title: 'Aufzeichnung beenden',
+        title: t('timer.stopTitle'),
         body: node,
         buttons: [
-            { label: 'Weiterlaufen lassen', value: null },
-            { label: 'Stoppen', value: 'stop', kind: 'primary' },
+            { label: t('timer.keepRunning'), value: null },
+            { label: t('timer.stop'), value: 'stop', kind: 'primary' },
         ],
     });
     if (result !== 'stop') return;
@@ -193,9 +196,9 @@ async function stopTimer(root, id) {
         invalidateTree();
 
         if (data.discarded) {
-            toast('Zu kurz – nach der Rundung blieb nichts übrig. Kein Eintrag angelegt.', 'info');
+            toast(t('timer.tooShort'), 'info');
         } else {
-            toast(`Gespeichert: ${hhmm(data.entry.duration_min)}`, 'ok');
+            toast(t('timer.savedWith', { duration: hhmm(data.entry.duration_min) }), 'ok');
         }
         await timerView.render(root);
     } catch (error) {
@@ -204,7 +207,7 @@ async function stopTimer(root, id) {
 }
 
 async function discardTimer(root, id) {
-    if (!await confirmDialog('Timer verwerfen', 'Die bisher gelaufene Zeit wird nicht gespeichert.', 'Verwerfen')) return;
+    if (!await confirmDialog(t('timer.discardTitle'), t('timer.discardText'), t('timer.discard'))) return;
     try {
         await api.delete(`/timer/${id}`);
         await loadTimers();
@@ -222,30 +225,30 @@ async function editTimer(root, id) {
     const node = document.createElement('div');
     node.innerHTML = html`
         <label class="field">
-            <span class="field__label">Begonnen um</span>
+            <span class="field__label">${t('timer.startedAt')}</span>
             <input class="input" type="time" name="start" value="${startTime}" step="60">
         </label>
         <label class="field">
-            <span class="field__label">Notiz</span>
+            <span class="field__label">${t('common.note')}</span>
             <textarea class="input" name="note" rows="3">${timer.note}</textarea>
         </label>
-        <button class="btn btn--ghost" type="button" data-change-project>Teilprojekt wechseln …</button>`;
+        <button class="btn btn--ghost" type="button" data-change-project>${t('timer.changeSubproject')}</button>`;
 
     let newSubproject = null;
     node.querySelector('[data-change-project]').addEventListener('click', async () => {
         const picked = await pickSubproject({ current: timer.subproject_id });
         if (picked) {
             newSubproject = picked;
-            toast('Teilprojekt wird beim Speichern gewechselt.', 'info', 2500);
+            toast(t('timer.subprojectQueued'), 'info', 2500);
         }
     });
 
     const result = await dialog({
-        title: 'Timer anpassen',
+        title: t('timer.adjustTitle'),
         body: node,
         buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Speichern', value: 'save', kind: 'primary' },
+            { label: t('common.cancel'), value: null },
+            { label: t('common.save'), value: 'save', kind: 'primary' },
         ],
     });
     if (result !== 'save') return;

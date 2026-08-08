@@ -1,4 +1,7 @@
-// Kleine Helfer ohne Abhängigkeiten.
+// Kleine Helfer. Einzige Abhängigkeit ist die Sprache – Zahlen, Datumsformate
+// und Tagesnamen hängen daran.
+
+import { lang, locale, t } from './i18n.js';
 
 /** HTML-Escaping. Jeder Wert aus der API läuft hier durch. */
 export function esc(value) {
@@ -48,15 +51,31 @@ export function raw(string) {
 
 export { Html };
 
-const NUMBER = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Formatierer je Sprache anlegen und behalten – ein Intl-Objekt pro Aufruf
+// wäre in den langen Listen spürbar.
+const formatters = new Map();
+
+function formatter(kind, options) {
+    const key = `${lang()}:${kind}`;
+    if (!formatters.has(key)) {
+        formatters.set(key, kind === 'number'
+            ? new Intl.NumberFormat(locale(), options)
+            : new Intl.DateTimeFormat(locale(), options));
+    }
+    return formatters.get(key);
+}
+
+function number() {
+    return formatter('number', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 export function money(amount, currency = 'EUR') {
     if (amount === null || amount === undefined) return '';
-    return `${NUMBER.format(amount)} ${currency === 'EUR' ? '€' : currency}`;
+    return `${number().format(amount)} ${currency === 'EUR' ? '€' : currency}`;
 }
 
 export function decimal(value) {
-    return NUMBER.format(value ?? 0);
+    return number().format(value ?? 0);
 }
 
 /** Minuten als HH:MM, auch jenseits von 24 Stunden. */
@@ -66,17 +85,37 @@ export function hhmm(minutes) {
     return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
 
-const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+/** "2026-08-08" als Date in lokaler Zeit – ohne UTC-Umweg über new Date(iso). */
+function fromISODate(isoDate) {
+    const [y, m, d] = isoDate.split('-').map(Number);
+    return new Date(y, m - 1, d);
+}
 
-/** "2026-08-08" -> "Heute", "Gestern" oder "Sa, 08.08.2026". */
+/** "2026-08-08" -> "Heute"/"Today", "Gestern"/"Yesterday" oder "Sa, 08.08.2026". */
 export function dayLabel(isoDate) {
     const today = todayISO();
-    if (isoDate === today) return 'Heute';
-    if (isoDate === shiftDays(today, -1)) return 'Gestern';
+    if (isoDate === today) return t('common.today');
+    if (isoDate === shiftDays(today, -1)) return t('common.yesterday');
+    return formatDate(isoDate, true);
+}
 
-    const [y, m, d] = isoDate.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    return `${WEEKDAYS[date.getDay()].slice(0, 2)}, ${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;
+/**
+ * Datum in der Sprache des Anwenders. Mit `weekday` zusätzlich der abgekürzte
+ * Wochentag – der Punkt der deutschen Abkürzung fällt weg, sonst stünde vor
+ * dem Komma ein zweites Satzzeichen ("Sa., 08.08.2026").
+ */
+export function formatDate(isoDate, weekday = false) {
+    const date = fromISODate(isoDate);
+    const day = formatter('date', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+    if (!weekday) return day;
+
+    const short = formatter('weekday', { weekday: 'short' }).format(date).replace(/\.$/, '');
+    return `${short}, ${day}`;
+}
+
+/** Zeitstempel aus der API ("2026-08-08T09:15:00+02:00") als Datum und Uhrzeit. */
+export function formatDateTime(iso) {
+    return new Date(iso).toLocaleString(locale());
 }
 
 export function todayISO() {

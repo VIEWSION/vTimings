@@ -1,6 +1,7 @@
 // Wiederverwendete Bausteine: Toasts, Dialoge, Teilprojekt-Auswahl.
 
 import { esc, html } from './util.js';
+import { t } from './i18n.js';
 import { flatSubprojects, loadTree } from './store.js';
 
 /**
@@ -38,7 +39,7 @@ export function toast(message, kind = 'info', timeout = 4000) {
 
 export function toastError(error) {
     const fields = error?.fields ? Object.values(error.fields) : [];
-    toast(fields.length ? `${error.message} ${fields.join(' ')}` : (error?.message || 'Fehler'), 'error', 7000);
+    toast(fields.length ? `${error.message} ${fields.join(' ')}` : (error?.message || t('common.error')), 'error', 7000);
 }
 
 // -- Dialoge ----------------------------------------------------------------
@@ -55,7 +56,7 @@ export function dialog({ title, body, buttons = [], onMount }) {
             <div class="dialog" role="dialog" aria-modal="true" aria-label="${title}">
                 <header class="dialog__head">
                     <h2>${title}</h2>
-                    <button class="icon-btn" data-close aria-label="Schließen">✕</button>
+                    <button class="icon-btn" data-close aria-label="${t('common.close')}">✕</button>
                 </header>
                 <div class="dialog__body"></div>
                 <footer class="dialog__foot"></footer>
@@ -151,7 +152,7 @@ export function showFieldErrors(root, error) {
  *
  * @returns Rückgabe von `save` (bzw. true) oder null bei Abbruch.
  */
-export async function saveDialog({ title, body, save, saveLabel = 'Speichern', cancelLabel = 'Abbrechen' }) {
+export async function saveDialog({ title, body, save, saveLabel = t('common.save'), cancelLabel = t('common.cancel') }) {
     let result;
 
     const outcome = await dialog({
@@ -180,12 +181,12 @@ export async function saveDialog({ title, body, save, saveLabel = 'Speichern', c
     return outcome === '__saved' ? (result ?? true) : null;
 }
 
-export async function confirmDialog(title, message, confirmLabel = 'Löschen') {
+export async function confirmDialog(title, message, confirmLabel = t('common.delete')) {
     const result = await dialog({
         title,
         body: html`<p>${message}</p>`,
         buttons: [
-            { label: 'Abbrechen', value: false },
+            { label: t('common.cancel'), value: false },
             { label: confirmLabel, value: true, kind: 'danger' },
         ],
     });
@@ -198,14 +199,14 @@ export async function confirmDialog(title, message, confirmLabel = 'Löschen') {
  * Durchsuchbare Auswahl über Kunde | Projekt | Teilprojekt.
  * Liefert die gewählte Teilprojekt-ID oder null.
  */
-export async function pickSubproject({ title = 'Teilprojekt wählen', current = null } = {}) {
+export async function pickSubproject({ title = t('picker.title'), current = null } = {}) {
     await loadTree();
     const all = flatSubprojects();
 
     const node = document.createElement('div');
     node.className = 'picker';
     node.innerHTML = html`
-        <input class="input picker__search" type="search" placeholder="Suchen …" autocomplete="off">
+        <input class="input picker__search" type="search" placeholder="${t('common.searchPlaceholder')}" autocomplete="off">
         <ul class="picker__list"></ul>`;
 
     const search = node.querySelector('.picker__search');
@@ -232,7 +233,7 @@ export async function pickSubproject({ title = 'Teilprojekt wählen', current = 
                         <span class="picker__rate">${sub.effective_rate} €</span>
                     </button>
                 </li>`).join('')
-            : '<li class="picker__empty">Kein Treffer.</li>';
+            : html`<li class="picker__empty">${t('common.noMatch')}</li>`;
     }
 
     search.addEventListener('input', draw);
@@ -249,8 +250,8 @@ export async function pickSubproject({ title = 'Teilprojekt wählen', current = 
         title,
         body: node,
         buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Übernehmen', value: 'ok', kind: 'primary' },
+            { label: t('common.cancel'), value: null },
+            { label: t('common.apply'), value: 'ok', kind: 'primary' },
         ],
     });
 

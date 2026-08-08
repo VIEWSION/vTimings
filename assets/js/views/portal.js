@@ -6,8 +6,9 @@
 
 import { api } from '../api.js';
 import { state } from '../store.js';
+import { t } from '../i18n.js';
 import { bindOnce, toastError } from '../ui.js';
-import { dayLabel, decimal, hhmm, html, money } from '../util.js';
+import { dayLabel, decimal, formatDate, formatDateTime, hhmm, html, money } from '../util.js';
 
 const ENTRY_LIMIT = 25;
 
@@ -15,10 +16,8 @@ let data = null;
 let selected = null;
 
 export const portalView = {
-    title: 'Übersicht',
-
     async render(root) {
-        root.innerHTML = '<div class="loading">Lade …</div>';
+        root.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
         try {
             data = await api.get('/portal', {
@@ -64,47 +63,49 @@ function paint(root) {
                     <h1>${data.client.name}</h1>
                     <p class="muted">
                         ${formatDate(data.period.from)} – ${formatDate(data.period.to)}
-                        · Stand ${new Date(data.generated_at).toLocaleString('de-DE')}
+                        · ${t('portal.asOf', { time: formatDateTime(data.generated_at) })}
                     </p>
                 </div>
                 <div class="portal__totals">
                     <span class="portal__big">${totals.hhmm}</span>
-                    <span class="muted">${decimal(totals.decimal)} Stunden in ${data.period.days} Tagen</span>
+                    <span class="muted">
+                        ${t('portal.hoursInDays', { hours: decimal(totals.decimal), days: data.period.days })}
+                    </span>
                     ${costs && totals.amount !== undefined
                         ? html`<span class="portal__amount">${money(totals.amount, data.client.currency)}</span>`
                         : ''}
-                    <span class="muted portal__lifetime">insgesamt ${data.lifetime.hhmm}</span>
+                    <span class="muted portal__lifetime">
+                        ${t('portal.lifetime', { duration: data.lifetime.hhmm })}
+                    </span>
                 </div>
             </header>
 
             ${data.projects.length ? html`
                 <section class="card">
                     <header class="card__head">
-                        <h2>Projekte</h2>
+                        <h2>${t('portal.projects')}</h2>
                         ${project
-                            ? html`<button class="btn btn--small" data-clear>Auswahl aufheben</button>`
+                            ? html`<button class="btn btn--small" data-clear>${t('portal.clearSelection')}</button>`
                             : html`<span class="badge badge--head">${data.projects.length}</span>`}
                     </header>
                     <table class="table table--stats ${selectable ? 'table--clickable' : ''}">
                         <thead>
                             <tr>
-                                <th>Projekt</th>
-                                <th class="num">Stunden</th>
-                                ${costs ? html`<th class="num">Betrag</th>` : ''}
-                                <th class="num">Einträge</th>
+                                <th>${t('common.project')}</th>
+                                <th class="num">${t('common.hoursHead')}</th>
+                                ${costs ? html`<th class="num">${t('common.amount')}</th>` : ''}
+                                <th class="num">${t('common.entriesHead')}</th>
                             </tr>
                         </thead>
                         <tbody>${data.projects.map((p) => projectRow(p, costs, selectable))}</tbody>
                     </table>
                     ${selectable ? html`
-                        <p class="muted card__body table__hint">
-                            Projekt anklicken, um Verlauf und Leistungen darauf einzugrenzen.
-                        </p>` : ''}
+                        <p class="muted card__body table__hint">${t('portal.selectHint')}</p>` : ''}
                 </section>
 
                 <section class="card">
                     <header class="card__head">
-                        <h2>Verlauf</h2>
+                        <h2>${t('portal.history')}</h2>
                         ${project ? html`<span class="badge">${project.name}</span>` : ''}
                     </header>
                     ${dailyChart(project)}
@@ -113,31 +114,28 @@ function paint(root) {
                 ${withBudget.length ? html`
                     <section class="card">
                         <header class="card__head">
-                            <h2>Projektfortschritt</h2>
-                            <span class="muted">gesamter Verbrauch</span>
+                            <h2>${t('portal.progress')}</h2>
+                            <span class="muted">${t('portal.progressHint')}</span>
                         </header>
                         <ul class="budgets">${withBudget.map(budgetRow)}</ul>
                     </section>` : ''}
 
                 <section class="card">
                     <header class="card__head">
-                        <h2>Letzte Leistungen</h2>
-                        <span class="badge">${entries.length} im Zeitraum</span>
+                        <h2>${t('portal.recent')}</h2>
+                        <span class="badge">${t('portal.inPeriod', { count: entries.length })}</span>
                     </header>
                     <ul class="entrylist">
                         ${entries.slice(0, ENTRY_LIMIT).map((entry) => entryRow(entry, costs))}
                     </ul>
                     ${entries.length > ENTRY_LIMIT ? html`
                         <p class="muted card__body table__hint">
-                            Zeigt die ${ENTRY_LIMIT} jüngsten von ${entries.length} Einträgen.
-                            Die vollständige Liste steht unter „Leistungen“.
+                            ${t('portal.shownOf', { shown: ENTRY_LIMIT, total: entries.length })}
                         </p>` : ''}
                 </section>`
             : html`
                 <div class="card">
-                    <p class="card__body muted">
-                        In den letzten ${data.period.days} Tagen wurde nichts erfasst.
-                    </p>
+                    <p class="card__body muted">${t('portal.emptyPeriod', { days: data.period.days })}</p>
                 </div>`}
         </section>`;
 
@@ -241,8 +239,8 @@ function budgetRow(project) {
             </span>
             <span class="muted budgets__rest">
                 ${over
-                    ? `${decimal(Math.abs(p.remaining_hours))} h über Budget`
-                    : `${decimal(p.remaining_hours)} h verbleiben`}
+                    ? t('portal.overBudget', { hours: decimal(Math.abs(p.remaining_hours)) })
+                    : t('portal.remaining', { hours: decimal(p.remaining_hours) })}
             </span>
         </li>`;
 }
@@ -256,13 +254,6 @@ function projectTotals(project, entries, costs) {
     };
     if (costs) out.amount = project.amount ?? 0;
     return out;
-}
-
-function formatDate(iso, weekday = false) {
-    const [y, m, d] = iso.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('de-DE',
-        weekday ? { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }
-                : { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 // -- Verhalten --------------------------------------------------------------

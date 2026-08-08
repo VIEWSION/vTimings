@@ -2,11 +2,15 @@
 
 import { api } from '../api.js';
 import { state, loadTree } from '../store.js';
+import { t } from '../i18n.js';
 import { confirmDialog, dialog, saveDialog, toast, toastError } from '../ui.js';
-import { esc, html } from '../util.js';
+import { esc, formatDateTime, html } from '../util.js';
+
+/** Vom Server erzwungene Mindestlänge – siehe UserRepo::MIN_PASSWORD. */
+const MIN_PASSWORD = 10;
 
 export async function renderUsers(host) {
-    host.innerHTML = '<div class="loading">Lade …</div>';
+    host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
     const [{ users }, { tokens }] = await Promise.all([
         api.get('/users'),
@@ -16,12 +20,13 @@ export async function renderUsers(host) {
     host.innerHTML = html`
         <section class="card">
             <header class="card__head">
-                <h2>Zugänge</h2>
-                <button class="btn btn--small" data-new-user>Zugang anlegen</button>
+                <h2>${t('users.section')}</h2>
+                <button class="btn btn--small" data-new-user>${t('users.add')}</button>
             </header>
             <table class="table">
                 <thead>
-                    <tr><th>Name</th><th>Rolle</th><th>Kunde</th><th>Zuletzt</th><th></th></tr>
+                    <tr><th>${t('common.name')}</th><th>${t('users.role')}</th><th>${t('common.client')}</th>
+                        <th>${t('users.lastLogin')}</th><th></th></tr>
                 </thead>
                 <tbody>
                     ${users.map((user) => html`
@@ -30,21 +35,23 @@ export async function renderUsers(host) {
                                 <strong>${user.name}</strong><br>
                                 <span class="muted">${user.email}</span>
                             </td>
-                            <td>${user.role === 'admin' ? 'Administrator' : 'Kunde'}
+                            <td>${user.role === 'admin' ? t('users.roleAdmin') : t('users.roleClient')}
                                 ${user.role === 'client' && !user.show_costs
-                                    ? html`<br><span class="tag">ohne Kosten</span>` : ''}
+                                    ? html`<br><span class="tag">${t('users.noCosts')}</span>` : ''}
                                 ${user.project_filter
-                                    ? html`<br><span class="tag">${user.project_filter.length} Projekt(e)</span>` : ''}
+                                    ? html`<br><span class="tag">
+                                        ${t('users.projectCount', { count: user.project_filter.length })}</span>` : ''}
                             </td>
-                            <td>${user.client_name ?? '—'}</td>
+                            <td>${user.client_name ?? t('common.dash')}</td>
                             <td class="muted">${user.last_login_at
-                                ? new Date(user.last_login_at).toLocaleDateString('de-DE')
-                                : 'nie'}</td>
+                                ? formatDateTime(user.last_login_at)
+                                : t('common.never')}</td>
                             <td class="num">
-                                <button class="icon-btn" data-edit-user="${user.id}" title="Bearbeiten">✎</button>
+                                <button class="icon-btn" data-edit-user="${user.id}" title="${t('common.edit')}">✎</button>
                                 ${user.id === state.user?.id
                                     ? ''
-                                    : html`<button class="icon-btn" data-delete-user="${user.id}" title="Löschen">🗑</button>`}
+                                    : html`<button class="icon-btn" data-delete-user="${user.id}"
+                                        title="${t('common.delete')}">🗑</button>`}
                             </td>
                         </tr>`)}
                 </tbody>
@@ -53,25 +60,26 @@ export async function renderUsers(host) {
 
         <section class="card">
             <header class="card__head">
-                <h2>API-Tokens</h2>
-                <button class="btn btn--small" data-new-token>Token erzeugen</button>
+                <h2>${t('tokens.section')}</h2>
+                <button class="btn btn--small" data-new-token>${t('tokens.add')}</button>
             </header>
             <div class="card__body">
-                <p class="muted">Für spätere native Clients. Ein Token ersetzt die Anmeldung
-                    über den Browser und wird als <code>Authorization: Bearer …</code> geschickt.</p>
+                <p class="muted">${t('tokens.hint')} <code>Authorization: Bearer …</code></p>
             </div>
             ${tokens.length ? html`
                 <table class="table">
-                    <thead><tr><th>Bezeichnung</th><th>Konto</th><th>Zuletzt benutzt</th><th></th></tr></thead>
+                    <thead><tr><th>${t('tokens.label')}</th><th>${t('tokens.account')}</th>
+                        <th>${t('tokens.lastUsed')}</th><th></th></tr></thead>
                     <tbody>
                         ${tokens.map((token) => html`
                             <tr>
                                 <td>${token.label}</td>
                                 <td class="muted">${token.email}</td>
                                 <td class="muted">${token.last_used_at
-                                    ? new Date(token.last_used_at).toLocaleString('de-DE') : 'nie'}</td>
+                                    ? formatDateTime(token.last_used_at) : t('common.never')}</td>
                                 <td class="num">
-                                    <button class="icon-btn" data-revoke="${token.id}" title="Widerrufen">🗑</button>
+                                    <button class="icon-btn" data-revoke="${token.id}"
+                                        title="${t('tokens.revoke')}">🗑</button>
                                 </td>
                             </tr>`)}
                     </tbody>
@@ -90,7 +98,7 @@ function bind(host, users) {
 
         const del = event.target.closest('[data-delete-user]');
         if (del) {
-            if (!await confirmDialog('Zugang löschen', 'Der Zugang wird endgültig entfernt.')) return;
+            if (!await confirmDialog(t('users.deleteTitle'), t('users.deleteText'))) return;
             try {
                 await api.delete(`/users/${del.dataset.deleteUser}`);
                 await renderUsers(host);
@@ -102,7 +110,7 @@ function bind(host, users) {
 
         const revoke = event.target.closest('[data-revoke]');
         if (revoke) {
-            if (!await confirmDialog('Token widerrufen', 'Clients mit diesem Token verlieren sofort den Zugriff.', 'Widerrufen')) return;
+            if (!await confirmDialog(t('tokens.revokeTitle'), t('tokens.revokeText'), t('tokens.revoke'))) return;
             try {
                 await api.delete(`/tokens/${revoke.dataset.revoke}`);
                 await renderUsers(host);
@@ -117,38 +125,38 @@ async function editUser(host, user) {
 
     const node = document.createElement('div');
     node.innerHTML = html`
-        <label class="field"><span class="field__label">Name</span>
+        <label class="field"><span class="field__label">${t('common.name')}</span>
             <input class="input" name="name" value="${user?.name ?? ''}"></label>
-        <label class="field"><span class="field__label">E-Mail</span>
+        <label class="field"><span class="field__label">${t('common.email')}</span>
             <input class="input" type="email" name="email" value="${user?.email ?? ''}"></label>
         <label class="field">
-            <span class="field__label">Passwort${user ? ' (leer lassen = unverändert)' : ''}</span>
+            <span class="field__label">${t('common.password')}${user ? t('users.passwordKeep') : ''}</span>
             <input class="input" type="password" name="password" autocomplete="new-password"
-                minlength="10" placeholder="mindestens 10 Zeichen">
-            <span class="field__hint">Mindestens 10 Zeichen.</span></label>
-        <label class="field"><span class="field__label">Rolle</span>
+                minlength="${MIN_PASSWORD}" placeholder="${t('settings.minCharsPlaceholder', { n: MIN_PASSWORD })}">
+            <span class="field__hint">${t('settings.minChars', { n: MIN_PASSWORD })}</span></label>
+        <label class="field"><span class="field__label">${t('users.role')}</span>
             <select class="input" name="role">
-                <option value="client" ${user?.role === 'admin' ? '' : 'selected'}>Kunde (nur lesen)</option>
-                <option value="admin" ${user?.role === 'admin' ? 'selected' : ''}>Administrator</option>
+                <option value="client" ${user?.role === 'admin' ? '' : 'selected'}>${t('users.roleClientOption')}</option>
+                <option value="admin" ${user?.role === 'admin' ? 'selected' : ''}>${t('users.roleAdmin')}</option>
             </select></label>
         <div data-client-fields>
-            <label class="field"><span class="field__label">Kunde</span>
+            <label class="field"><span class="field__label">${t('common.client')}</span>
                 <select class="input" name="client_id">
                     ${clients.map((c) => html`
                         <option value="${c.id}" ${user?.client_id === c.id ? 'selected' : ''}>${c.name}</option>`)}
                 </select></label>
             <label class="field">
-                <span class="field__label">Sichtbare Projekte</span>
+                <span class="field__label">${t('users.visibleProjects')}</span>
                 <select class="input" name="project_filter" multiple size="6"></select>
-                <span class="field__hint">Nichts ausgewählt = alle Projekte des Kunden.</span>
+                <span class="field__hint">${t('users.visibleProjectsHint')}</span>
             </label>
             <label class="switch">
                 <input type="checkbox" name="show_costs" ${user ? (user.show_costs ? 'checked' : '') : 'checked'}>
-                <span>Stundensätze und Beträge zeigen</span></label>
+                <span>${t('users.showCosts')}</span></label>
         </div>
         <label class="switch">
             <input type="checkbox" name="active" ${user ? (user.active ? 'checked' : '') : 'checked'}>
-            <span>aktiv</span></label>`;
+            <span>${t('users.active')}</span></label>`;
 
     const roleSelect = node.querySelector('[name=role]');
     const clientSelect = node.querySelector('[name=client_id]');
@@ -172,7 +180,7 @@ async function editUser(host, user) {
     toggleRole();
 
     const saved = await saveDialog({
-        title: user ? 'Zugang bearbeiten' : 'Zugang anlegen',
+        title: user ? t('users.edit') : t('users.add'),
         body: node,
         save: async () => {
             const get = (name) => node.querySelector(`[name=${name}]`);
@@ -195,22 +203,22 @@ async function editUser(host, user) {
     });
     if (!saved) return;
 
-    toast('Gespeichert.', 'ok', 2000);
+    toast(t('common.saved'), 'ok', 2000);
     await renderUsers(host);
 }
 
 async function createToken(host) {
     const node = document.createElement('div');
     node.innerHTML = html`
-        <label class="field"><span class="field__label">Bezeichnung</span>
-            <input class="input" name="label" placeholder="z. B. MacBook, iPhone"></label>
-        <label class="field"><span class="field__label">Gültig für (Tage, leer = unbegrenzt)</span>
+        <label class="field"><span class="field__label">${t('tokens.label')}</span>
+            <input class="input" name="label" placeholder="${t('tokens.labelPlaceholder')}"></label>
+        <label class="field"><span class="field__label">${t('tokens.expiresDays')}</span>
             <input class="input" type="number" name="expires_days" min="1" max="3650"></label>`;
 
     const data = await saveDialog({
-        title: 'API-Token erzeugen',
+        title: t('tokens.createTitle'),
         body: node,
-        saveLabel: 'Erzeugen',
+        saveLabel: t('common.create'),
         save: () => api.post('/tokens', {
             label: node.querySelector('[name=label]').value.trim() || 'Token',
             expires_days: node.querySelector('[name=expires_days]').value || undefined,
@@ -219,11 +227,11 @@ async function createToken(host) {
     if (!data) return;
 
     await dialog({
-        title: 'Token erzeugt',
+        title: t('tokens.createdTitle'),
         body: html`
             <p>${data.hint}</p>
             <pre><code>${data.token}</code></pre>`,
-        buttons: [{ label: 'Verstanden', value: 'ok', kind: 'primary' }],
+        buttons: [{ label: t('common.understood'), value: 'ok', kind: 'primary' }],
     });
 
     await renderUsers(host);

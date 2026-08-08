@@ -49,6 +49,17 @@ Instanz). Rohes Markup nur explizit über `raw()` oder `{ __raw: '...' }`.
 **Nie** `${wert}` für Text verwenden, der aus der API kommt, ohne dass es
 durch `html\`\`` läuft – das ist der einzige XSS-Schutz im Frontend.
 
+**Sprache:** Kein sichtbarer Text gehört fest in eine View. Beschriftungen
+kommen aus `assets/js/i18n.js` über `t('schlüssel')`, Zahlen und Daten über
+`money()`/`decimal()`/`formatDate()`/`dayLabel()` aus `util.js` – die kennen
+die Sprache und legen die passenden `Intl`-Formatierer an. Neue Schlüssel
+immer in **beiden** Blöcken (`de` und `en`) eintragen; `de` ist die
+Leitsprache und dient als Rückfallebene. Konstanten auf Modulebene dürfen
+kein `t()` enthalten (das liefe einmal beim Laden und bliebe dann stehen) –
+stattdessen eine Funktion, siehe `ADMIN_NAV()` in `app.js` und
+`groupLabel()` in `reports.js`. Wo die gewählte Sprache gespeichert wird,
+steht im README-Abschnitt „Sprache“.
+
 Formulare in Dialogen: `saveDialog()` + `showFieldErrors()` aus `ui.js`
 verwenden, nicht `dialog()` direkt mit manuellem try/catch. `saveDialog`
 hält den Dialog bei einem Fehler offen (Eingaben bleiben erhalten) und
@@ -81,18 +92,12 @@ Muster für eine Ersatzpalette.
 
 ## Bekannte Baustellen (aus offenen Issues)
 
-- **#2 Mehrsprachigkeit:** Bisher nur der Leistungsnachweis-Ausdruck ist
-  mehrsprachig (`Report\Translator`, `de`/`en`, Datumsformat inklusive). Die
-  eigentliche Web-Oberfläche (Timer, Einträge, Stammdaten, Auswertung,
-  Kundenportal) ist komplett fest auf Deutsch. Das Feld `clients.lang`
-  existiert bereits und wird aktuell nur vom Ausdruck gelesen. Issue
-  verlangt zusätzlich einen Lang-Switch im Kundenportal, der `clients.lang`
-  überschreibt – das Feld ist also nicht mehr rein „Vorgabe für den Druck“,
-  sondern wird zur tatsächlichen UI-Sprache des Kunden.
 - **#3 Kunden-Zeit-Offset:** Kundenportal zeigt aktuell ungefiltert bis zur
   Sekunde. Gewünscht: pro Kunde einstellbare Sichtbarkeitsgrenze nach
   Kalendertag (nicht rollierende Stunden), damit frische/unfertige Einträge
   nicht sofort sichtbar sind.
+- **#4 Druckausgabe leer:** Safari auf dem Mac erzeugt aus der Druckansicht
+  ein leeres bzw. unvollständiges PDF.
 - **#1 Projekt-Selektion:** Klickbarkeit bei nur einem Projekt behoben
   (`e7369d1`). Offen: Höhenzittern zwischen `.badge` und `.btn--small`
   (unterschiedliche `min-height`) beim Umschalten der Projektauswahl im

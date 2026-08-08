@@ -2,6 +2,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree, invalidateTree, flatSubprojects } from '../store.js';
+import { t } from '../i18n.js';
 import { confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
     dateTimeToISO, dayLabel, debounce, esc, html, money, shiftDays, startOfMonth, todayISO,
@@ -34,8 +35,6 @@ function showClientFilter() {
 }
 
 export const entriesView = {
-    title: 'Einträge',
-
     async render(root) {
         await loadTree();
 
@@ -54,60 +53,60 @@ export const entriesView = {
                 <form class="card filters" id="filters">
                     <div class="filters__row">
                         <label class="field field--inline">
-                            <span class="field__label">Von</span>
+                            <span class="field__label">${t('common.from')}</span>
                             <input class="input" type="date" name="from" value="${filters.from}">
                         </label>
                         <label class="field field--inline">
-                            <span class="field__label">Bis</span>
+                            <span class="field__label">${t('common.to')}</span>
                             <input class="input" type="date" name="to" value="${filters.to}">
                         </label>
                         ${showClientFilter() ? html`
                             <label class="field field--inline field--grow">
-                                <span class="field__label">Kunde</span>
-                                <select class="input" name="client_id"><option value="">Alle</option></select>
+                                <span class="field__label">${t('common.client')}</span>
+                                <select class="input" name="client_id"></select>
                             </label>` : ''}
                         <label class="field field--inline field--grow">
-                            <span class="field__label">Projekt</span>
-                            <select class="input" name="project_id"><option value="">Alle</option></select>
+                            <span class="field__label">${t('common.project')}</span>
+                            <select class="input" name="project_id"></select>
                         </label>
                         <label class="field field--inline field--grow">
-                            <span class="field__label">Teilprojekt</span>
-                            <select class="input" name="subproject_id"><option value="">Alle</option></select>
+                            <span class="field__label">${t('common.subproject')}</span>
+                            <select class="input" name="subproject_id"></select>
                         </label>
                     </div>
                     <div class="filters__row">
                         <label class="field field--inline field--grow">
-                            <span class="field__label">Suche</span>
+                            <span class="field__label">${t('common.search')}</span>
                             <input class="input" type="search" name="q" value="${filters.q}"
-                                placeholder="Notizen, Projekt, Teilprojekt …">
+                                placeholder="${t('entries.searchPlaceholder')}">
                         </label>
                         <label class="field field--inline">
-                            <span class="field__label">Status</span>
+                            <span class="field__label">${t('common.status')}</span>
                             <select class="input" name="billed">
-                                <option value="">Alle</option>
-                                <option value="0">offen</option>
-                                <option value="1">abgerechnet</option>
+                                <option value="">${t('common.all')}</option>
+                                <option value="0">${t('common.billedOpen')}</option>
+                                <option value="1">${t('common.billedDone')}</option>
                             </select>
                         </label>
                     </div>
                     <div class="filters__row filters__row--actions">
                         <div class="chips">
-                            <button type="button" class="chip" data-range="today">Heute</button>
-                            <button type="button" class="chip" data-range="week">Diese Woche</button>
-                            <button type="button" class="chip" data-range="month">Dieser Monat</button>
-                            <button type="button" class="chip" data-range="lastmonth">Letzter Monat</button>
-                            <button type="button" class="chip" data-range="year">Dieses Jahr</button>
-                            <button type="button" class="chip" data-range="all">Gesamt</button>
-                            <button type="button" class="chip" data-reset>Filter zurücksetzen</button>
+                            <button type="button" class="chip" data-range="today">${t('entries.rangeToday')}</button>
+                            <button type="button" class="chip" data-range="week">${t('entries.rangeWeek')}</button>
+                            <button type="button" class="chip" data-range="month">${t('entries.rangeMonth')}</button>
+                            <button type="button" class="chip" data-range="lastmonth">${t('entries.rangeLastMonth')}</button>
+                            <button type="button" class="chip" data-range="year">${t('entries.rangeYear')}</button>
+                            <button type="button" class="chip" data-range="all">${t('entries.rangeAll')}</button>
+                            <button type="button" class="chip" data-reset>${t('entries.resetFilters')}</button>
                         </div>
                         ${canEdit() ? html`
                             <label class="switch">
-                                <input type="checkbox" name="trashed"> <span>Papierkorb</span>
+                                <input type="checkbox" name="trashed"> <span>${t('entries.trash')}</span>
                             </label>
-                            <button type="button" class="btn btn--primary" id="new-entry">Eintrag hinzufügen</button>` : ''}
+                            <button type="button" class="btn btn--primary" id="new-entry">${t('entries.add')}</button>` : ''}
                     </div>
                 </form>
-                <div id="results"><div class="loading">Lade …</div></div>
+                <div id="results"><div class="loading">${t('common.loading')}</div></div>
             </section>`;
 
         fillFilters(root);
@@ -122,7 +121,7 @@ function fillFilters(root) {
     const clientSelect = root.querySelector('[name=client_id]');
 
     if (clientSelect) {
-        clientSelect.innerHTML = '<option value="">Alle Kunden</option>' +
+        clientSelect.innerHTML = `<option value="">${esc(t('entries.allClients'))}</option>` +
             clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
         clientSelect.value = filters.client_id;
     }
@@ -145,7 +144,7 @@ function fillProjects(root) {
         .flatMap((c) => c.projects.map((p) => ({ ...p, client: c.name })));
 
     const many = clients.length > 1 && !clientId;
-    select.innerHTML = '<option value="">Alle Projekte</option>' + projects
+    select.innerHTML = `<option value="">${esc(t('entries.allProjects'))}</option>` + projects
         .map((p) => `<option value="${p.id}">${esc(many ? `${p.client} | ${p.name}` : p.name)}</option>`)
         .join('');
 
@@ -169,9 +168,9 @@ function fillSubprojects(root) {
     // Ohne gewähltes Projekt wäre die Liste unübersichtlich lang.
     select.disabled = !projectId;
     select.innerHTML = projectId
-        ? '<option value="">Alle Teilprojekte</option>' +
+        ? `<option value="">${esc(t('entries.allSubprojects'))}</option>` +
           subs.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')
-        : '<option value="">erst Projekt wählen</option>';
+        : `<option value="">${esc(t('entries.pickProjectFirst'))}</option>`;
 
     select.value = subs.some((s) => String(s.id) === filters.subproject_id) ? filters.subproject_id : '';
     filters.subproject_id = select.value;
@@ -229,7 +228,7 @@ function bind(root) {
 
         const del = event.target.closest('[data-delete]');
         if (del) {
-            if (!await confirmDialog('Eintrag löschen', 'Der Eintrag wandert in den Papierkorb.')) return;
+            if (!await confirmDialog(t('entries.deleteTitle'), t('entries.deleteText'))) return;
             try {
                 await api.delete(`/entries/${del.dataset.delete}`);
                 invalidateTree();
@@ -293,7 +292,7 @@ function applyRange(form, range) {
 
 async function refresh(root) {
     const host = root.querySelector('#results');
-    host.innerHTML = '<div class="loading">Lade …</div>';
+    host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
     try {
         const data = await api.get('/entries', {
@@ -303,23 +302,24 @@ async function refresh(root) {
         });
 
         if (!data.days.length) {
-            host.innerHTML = '<div class="card"><p class="muted card__body">Keine Einträge im gewählten Zeitraum.</p></div>';
+            host.innerHTML = html`<div class="card"><p class="muted card__body">${t('entries.empty')}</p></div>`;
             return;
         }
 
         host.innerHTML = html`
             <div class="summary card">
-                <span><strong>${data.totals.hhmm}</strong> <span class="muted">Stunden</span></span>
+                <span><strong>${data.totals.hhmm}</strong> <span class="muted">${t('common.hours')}</span></span>
                 ${data.totals.amount !== undefined
                     ? html`<span><strong>${money(data.totals.amount)}</strong></span>` : ''}
-                <span class="muted">${data.totals.entries} Einträge</span>
+                <span class="muted">${data.totals.entries} ${t('common.entries')}</span>
                 ${data.total > data.totals.entries
-                    ? html`<span class="muted">(zeigt ${data.totals.entries} von ${data.total})</span>` : ''}
+                    ? html`<span class="muted">
+                        ${t('entries.countOf', { shown: data.totals.entries, total: data.total })}</span>` : ''}
             </div>
             ${data.days.map(dayGroup)}`;
     } catch (error) {
         toastError(error);
-        host.innerHTML = '<div class="card"><p class="card__body">Konnte nicht geladen werden.</p></div>';
+        host.innerHTML = html`<div class="card"><p class="card__body">${t('common.loadFailed')}</p></div>`;
     }
 }
 
@@ -340,7 +340,7 @@ function row(entry) {
             <span class="dot" style="background:${entry.color || 'var(--border)'}"></span>
             <span class="entry__times">
                 ${entry.start_time}–${entry.end_time}
-                ${entry.overnight ? html`<span class="tag" title="über Mitternacht">+1</span>` : ''}
+                ${entry.overnight ? html`<span class="tag" title="${t('entries.overnight')}">+1</span>` : ''}
             </span>
             <span class="entry__main">
                 <span class="entry__path">
@@ -348,7 +348,8 @@ function row(entry) {
                     <span class="muted"> · ${entry.client_name} · ${entry.project_name}</span>
                 </span>
                 ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
-                ${entry.billed ? html`<span class="tag tag--billed">Rechnung ${entry.invoice_number || '—'}</span>` : ''}
+                ${entry.billed ? html`<span class="tag tag--billed">
+                    ${t('entries.invoice', { number: entry.invoice_number || t('common.dash') })}</span>` : ''}
             </span>
             <span class="entry__dur">
                 ${entry.hhmm}
@@ -357,10 +358,10 @@ function row(entry) {
             ${canEdit() ? html`
                 <span class="entry__actions">
                     ${entry.deleted_at
-                        ? html`<button class="icon-btn" data-restore="${entry.id}" title="Wiederherstellen">↩</button>`
+                        ? html`<button class="icon-btn" data-restore="${entry.id}" title="${t('common.restore')}">↩</button>`
                         : html`
-                            <button class="icon-btn" data-edit="${entry.id}" title="Bearbeiten">✎</button>
-                            <button class="icon-btn" data-delete="${entry.id}" title="Löschen">🗑</button>`}
+                            <button class="icon-btn" data-edit="${entry.id}" title="${t('common.edit')}">✎</button>
+                            <button class="icon-btn" data-delete="${entry.id}" title="${t('common.delete')}">🗑</button>`}
                 </span>` : ''}
         </li>`;
 }
@@ -377,45 +378,45 @@ async function editEntry(root, id) {
 
     await loadTree();
     let subprojectId = entry?.subproject_id ?? flatSubprojects()[0]?.id ?? null;
-    let subprojectLabel = entry?.path ?? flatSubprojects()[0]?.path ?? '—';
+    let subprojectLabel = entry?.path ?? flatSubprojects()[0]?.path ?? t('common.dash');
 
     const node = document.createElement('div');
     node.innerHTML = html`
         <div class="field">
-            <span class="field__label">Teilprojekt</span>
+            <span class="field__label">${t('common.subproject')}</span>
             <button type="button" class="input input--button" data-pick>${subprojectLabel}</button>
         </div>
         <div class="filters__row">
             <label class="field field--inline">
-                <span class="field__label">Datum</span>
+                <span class="field__label">${t('common.date')}</span>
                 <input class="input" type="date" name="date" value="${entry?.date ?? todayISO()}">
             </label>
             <label class="field field--inline">
-                <span class="field__label">Von</span>
+                <span class="field__label">${t('common.from')}</span>
                 <input class="input" type="time" name="start" step="60" value="${entry?.start_time ?? '09:00'}">
             </label>
             <label class="field field--inline">
-                <span class="field__label">Bis</span>
+                <span class="field__label">${t('common.to')}</span>
                 <input class="input" type="time" name="end" step="60" value="${entry?.end_time ?? '10:00'}">
             </label>
         </div>
         <label class="field">
-            <span class="field__label">Notizen</span>
+            <span class="field__label">${t('common.notes')}</span>
             <textarea class="input" name="note" rows="6">${entry?.note ?? ''}</textarea>
         </label>
         <div class="filters__row">
             <label class="field field--inline">
-                <span class="field__label">Stundensatz</span>
+                <span class="field__label">${t('common.rate')}</span>
                 <input class="input" type="number" name="rate" step="0.01" min="0"
-                    value="${entry?.rate ?? ''}" placeholder="erbt">
+                    value="${entry?.rate ?? ''}" placeholder="${t('entries.rateInherits')}">
             </label>
             <label class="switch">
                 <input type="checkbox" name="billable" ${entry ? (entry.billable ? 'checked' : '') : 'checked'}>
-                <span>abrechenbar</span>
+                <span>${t('entries.billable')}</span>
             </label>
             <label class="switch">
                 <input type="checkbox" name="round" ${entry ? '' : 'checked'}>
-                <span>auf Raster runden</span>
+                <span>${t('entries.round')}</span>
             </label>
         </div>`;
 
@@ -424,14 +425,14 @@ async function editEntry(root, id) {
         if (!picked) return;
         subprojectId = picked;
         const sub = flatSubprojects().find((s) => s.id === picked);
-        node.querySelector('[data-pick]').textContent = sub?.path || '—';
+        node.querySelector('[data-pick]').textContent = sub?.path || t('common.dash');
     });
 
     const get = (name) => node.querySelector(`[name=${name}]`);
     let overlaps = 0;
 
     const saved = await saveDialog({
-        title: id ? 'Eintrag bearbeiten' : 'Eintrag hinzufügen',
+        title: id ? t('entries.editTitle') : t('entries.add'),
         body: node,
         save: async () => {
             const date = get('date').value;
@@ -459,9 +460,9 @@ async function editEntry(root, id) {
     if (!saved) return;
 
     if (overlaps) {
-        toast(`Hinweis: überschneidet sich mit ${overlaps} anderen Eintrag/Einträgen.`, 'info', 6000);
+        toast(t('entries.overlapHint', { count: overlaps }), 'info', 6000);
     }
     invalidateTree();
-    toast('Gespeichert.', 'ok', 2000);
+    toast(t('common.saved'), 'ok', 2000);
     await refresh(root);
 }

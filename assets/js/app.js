@@ -1,8 +1,9 @@
 // Einstieg: Anmeldung, Navigation, Shell.
 
 import { api, ApiError } from './api.js';
-import { state, loadSession, login, logout, loadTimers, subscribe } from './store.js';
-import { toast, toastError } from './ui.js';
+import { state, loadSession, login, logout, loadTimers, subscribe, changeLang } from './store.js';
+import { LANGS, lang, setLang, t } from './i18n.js';
+import { toastError } from './ui.js';
 import { clock, html } from './util.js';
 
 import { timerView } from './views/timer.js';
@@ -28,17 +29,19 @@ const CLIENT_ROUTES = {
     '/leistungen': entriesView,
 };
 
-const ADMIN_NAV = [
-    { path: '/timer', label: 'Timer', icon: '⏱' },
-    { path: '/eintraege', label: 'Einträge', icon: '☰' },
-    { path: '/auswertung', label: 'Auswertung', icon: '◪' },
-    { path: '/stammdaten', label: 'Stammdaten', icon: '▤' },
-    { path: '/einstellungen', label: 'Mehr', icon: '⚙' },
+// Die Beschriftungen entstehen erst beim Aufbau der Hülle – nach einem
+// Sprachwechsel steht in `t()` sonst noch der alte Text.
+const ADMIN_NAV = () => [
+    { path: '/timer', label: t('nav.timer'), icon: '⏱' },
+    { path: '/eintraege', label: t('nav.entries'), icon: '☰' },
+    { path: '/auswertung', label: t('nav.reports'), icon: '◪' },
+    { path: '/stammdaten', label: t('nav.master'), icon: '▤' },
+    { path: '/einstellungen', label: t('nav.more'), icon: '⚙' },
 ];
 
-const CLIENT_NAV = [
-    { path: '/uebersicht', label: 'Übersicht', icon: '◪' },
-    { path: '/leistungen', label: 'Leistungen', icon: '☰' },
+const CLIENT_NAV = () => [
+    { path: '/uebersicht', label: t('nav.overview'), icon: '◪' },
+    { path: '/leistungen', label: t('nav.services'), icon: '☰' },
 ];
 
 /** Kundenzugänge bekommen eine eigene, reduzierte Navigation. */
@@ -47,7 +50,7 @@ function routes() {
 }
 
 function nav() {
-    return state.user?.role === 'client' ? CLIENT_NAV : ADMIN_NAV;
+    return state.user?.role === 'client' ? CLIENT_NAV() : ADMIN_NAV();
 }
 
 function homePath() {
@@ -84,6 +87,22 @@ async function boot() {
     renderShell();
 }
 
+// -- Sprachumschalter -------------------------------------------------------
+
+/**
+ * DE | EN als Schaltergruppe. `type="button"`, damit er im Anmeldeformular
+ * nicht als Absenden zählt.
+ */
+function langSwitch(className) {
+    return html`
+        <div class="langswitch ${className}" role="group" aria-label="${t('lang.switch')}">
+            ${LANGS.map((code) => html`
+                <button type="button" class="langswitch__btn ${code === lang() ? 'is-active' : ''}"
+                        data-lang="${code}" lang="${code}" title="${t('lang.' + code)}"
+                        ${code === lang() ? { __raw: 'aria-current="true"' } : ''}>${code.toUpperCase()}</button>`)}
+        </div>`;
+}
+
 // -- Anmeldung --------------------------------------------------------------
 
 function renderLogin(message = '') {
@@ -94,19 +113,30 @@ function renderLogin(message = '') {
         <div class="login">
             <form class="login__box card" id="login-form">
                 <h1>vTimings</h1>
-                <p class="muted">Zeiterfassung</p>
+                <p class="muted">${t('app.tagline')}</p>
                 ${message ? html`<p class="login__error">${message}</p>` : ''}
                 <label class="field">
-                    <span class="field__label">E-Mail</span>
+                    <span class="field__label">${t('common.email')}</span>
                     <input class="input" type="email" name="email" autocomplete="username" required autofocus>
                 </label>
                 <label class="field">
-                    <span class="field__label">Passwort</span>
+                    <span class="field__label">${t('common.password')}</span>
                     <input class="input" type="password" name="password" autocomplete="current-password" required>
                 </label>
-                <button class="btn btn--primary btn--big" type="submit">Anmelden</button>
+                <button class="btn btn--primary btn--big" type="submit">${t('auth.signIn')}</button>
+                ${langSwitch('login__lang')}
             </form>
         </div>`;
+
+    // Vor der Anmeldung gibt es keine Sitzung, in der die Wahl landen könnte –
+    // hier merkt sie sich nur der Browser (localStorage) und der Bildschirm
+    // zeichnet sich neu.
+    app.querySelector('.login__lang').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-lang]');
+        if (!button) return;
+        setLang(button.dataset.lang);
+        renderLogin(message);
+    });
 
     app.querySelector('#login-form').addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -129,15 +159,19 @@ function renderLogin(message = '') {
 function renderShell() {
     const items = nav();
 
+    // Der Sprachumschalter steht bewusst neben der Navigation, nicht darin:
+    // auf schmalen Displays weicht .topbar__nav der Tabbar, erreichbar
+    // bleiben soll er trotzdem.
     app.innerHTML = html`
         <div class="shell">
             <header class="topbar">
                 <span class="topbar__brand">vTimings</span>
                 <div class="topbar__timer" id="topbar-timer"></div>
+                ${langSwitch('topbar__lang')}
                 <nav class="topbar__nav">
                     ${items.map((item) => html`
                         <a class="topbar__link" href="#${item.path}" data-path="${item.path}">${item.label}</a>`)}
-                    <button class="btn btn--ghost btn--small" id="logout">Abmelden</button>
+                    <button class="btn btn--ghost btn--small" id="logout">${t('auth.signOut')}</button>
                 </nav>
             </header>
             <main class="main" id="view"></main>
@@ -155,6 +189,19 @@ function renderShell() {
             await logout();
         } catch { /* Session war ohnehin weg */ }
         renderLogin();
+    });
+
+    app.querySelector('.topbar__lang').addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-lang]');
+        if (!button || button.dataset.lang === lang()) return;
+        try {
+            await changeLang(button.dataset.lang);
+        } catch (error) {
+            return toastError(error);
+        }
+        // Die Hülle neu aufbauen zieht die aktuelle Ansicht mit – jede View
+        // baut ihr Markup bei jedem render() neu auf.
+        renderShell();
     });
 
     // Beim erneuten Aufbau (z. B. nach An-/Abmelden) die alten Bindungen
@@ -191,17 +238,17 @@ async function route() {
     host.className = 'main';
     host.id = 'view';
     app.querySelector('#view').replaceWith(host);
-    host.innerHTML = '<div class="loading">Lade …</div>';
+    host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
     try {
         await view.render(host);
     } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
             state.user = null;
-            return renderLogin('Sitzung abgelaufen. Bitte erneut anmelden.');
+            return renderLogin(t('auth.expired'));
         }
         toastError(error);
-        host.innerHTML = '<div class="card"><p class="card__body">Ansicht konnte nicht geladen werden.</p></div>';
+        host.innerHTML = html`<div class="card"><p class="card__body">${t('shell.viewFailed')}</p></div>`;
     }
 }
 

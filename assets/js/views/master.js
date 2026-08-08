@@ -3,26 +3,25 @@
 
 import { api } from '../api.js';
 import { state, loadTree, invalidateTree } from '../store.js';
+import { LANGS, t } from '../i18n.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
-import { esc, hhmm, html, money } from '../util.js';
+import { esc, html, money } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
 
 export const masterView = {
-    title: 'Stammdaten',
-
     async render(root) {
-        root.innerHTML = '<div class="loading">Lade …</div>';
+        root.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
         await loadTree({ force: true, archived: sel.archived });
 
         root.innerHTML = html`
             <section class="browser" data-level="clients">
                 <header class="browser__bar">
-                    <input class="input" type="search" id="master-search" placeholder="Kunde, Projekt, Teilprojekt …"
-                        value="${sel.q}">
+                    <input class="input" type="search" id="master-search"
+                        placeholder="${t('master.searchPlaceholder')}" value="${sel.q}">
                     <label class="switch">
                         <input type="checkbox" id="show-archived" ${sel.archived ? 'checked' : ''}>
-                        <span>Archivierte</span>
+                        <span>${t('master.showArchived')}</span>
                     </label>
                 </header>
                 <div class="columns">
@@ -79,13 +78,13 @@ function columnHead(title, backLabel, addLabel, addAttr) {
 
 function statLine(node) {
     const stats = node.stats;
-    if (!stats || !stats.entries) return '<span class="muted">—</span>';
+    if (!stats || !stats.entries) return html`<span class="muted">${t('common.dash')}</span>`;
     return html`<span class="muted">${stats.hhmm}${stats.amount ? ' · ' + money(stats.amount) : ''}</span>`;
 }
 
 function drawClients(root, list) {
     root.querySelector('#col-clients').innerHTML = html`
-        ${{ __raw: columnHead('Kunden', null, 'Kunde anlegen', 'data-add-client') }}
+        ${{ __raw: columnHead(t('master.clients'), null, t('master.addClient'), 'data-add-client') }}
         <ul class="rows">
             ${list.map((client) => html`
                 <li>
@@ -100,7 +99,7 @@ function drawClients(root, list) {
                     </button>
                 </li>`)}
         </ul>
-        ${list.length ? '' : '<p class="muted column__empty">Keine Kunden.</p>'}`;
+        ${list.length ? '' : html`<p class="muted column__empty">${t('master.noClients')}</p>`}`;
 }
 
 function drawProjects(root) {
@@ -108,17 +107,17 @@ function drawProjects(root) {
     const host = root.querySelector('#col-projects');
 
     if (!client) {
-        host.innerHTML = '<p class="muted column__empty">Kunde wählen.</p>';
+        host.innerHTML = html`<p class="muted column__empty">${t('master.pickClient')}</p>`;
         return;
     }
 
     host.innerHTML = html`
-        ${{ __raw: columnHead(client.name, 'Kunden', 'Projekt anlegen', 'data-add-project') }}
+        ${{ __raw: columnHead(client.name, t('master.clients'), t('master.addProject'), 'data-add-project') }}
         <div class="column__tools">
-            <button class="btn btn--ghost btn--small" data-edit-client="${client.id}">Kunde bearbeiten</button>
+            <button class="btn btn--ghost btn--small" data-edit-client="${client.id}">${t('master.editClient')}</button>
             <a class="btn btn--ghost btn--small" href="#/uebersicht?client_id=${client.id}"
-               title="So sieht der Kunde sein Portal">Kundenansicht</a>
-            <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">Löschen</button>
+               title="${t('master.clientViewHint')}">${t('master.clientView')}</a>
+            <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">${t('common.delete')}</button>
         </div>
         <ul class="rows">
             ${client.projects.map((project) => html`
@@ -130,7 +129,8 @@ function drawProjects(root) {
                             <strong>${project.name}</strong>
                             ${{ __raw: statLine(project) }}
                             ${project.progress ? html`
-                                <span class="progress" title="${project.progress.used_hours} von ${project.progress.budget_hours} Stunden">
+                                <span class="progress" title="${t('master.budgetTitle', {
+                                    used: project.progress.used_hours, budget: project.progress.budget_hours })}">
                                     <span class="progress__bar" style="width:${Math.min(100, project.progress.percent)}%"></span>
                                 </span>` : ''}
                         </span>
@@ -138,7 +138,7 @@ function drawProjects(root) {
                     </button>
                 </li>`)}
         </ul>
-        ${client.projects.length ? '' : '<p class="muted column__empty">Keine Projekte.</p>'}`;
+        ${client.projects.length ? '' : html`<p class="muted column__empty">${t('master.noProjects')}</p>`}`;
 }
 
 function drawSubprojects(root) {
@@ -146,20 +146,21 @@ function drawSubprojects(root) {
     const host = root.querySelector('#col-subprojects');
 
     if (!project) {
-        host.innerHTML = '<p class="muted column__empty">Projekt wählen.</p>';
+        host.innerHTML = html`<p class="muted column__empty">${t('master.pickProject')}</p>`;
         return;
     }
 
     host.innerHTML = html`
-        ${{ __raw: columnHead(project.name, 'Projekte', 'Teilprojekt anlegen', 'data-add-subproject') }}
+        ${{ __raw: columnHead(project.name, t('master.projects'), t('master.addSubproject'), 'data-add-subproject') }}
         <div class="column__tools">
-            <button class="btn btn--ghost btn--small" data-edit-project="${project.id}">Projekt bearbeiten</button>
-            <button class="btn btn--ghost btn--small" data-delete-project="${project.id}">Löschen</button>
+            <button class="btn btn--ghost btn--small" data-edit-project="${project.id}">${t('master.editProject')}</button>
+            <button class="btn btn--ghost btn--small" data-delete-project="${project.id}">${t('common.delete')}</button>
         </div>
         ${project.progress ? html`
             <div class="budget">
-                <strong>${project.progress.used_hours} h</strong> von ${project.progress.budget_hours} h
-                <span class="muted">(${project.progress.remaining_hours} h übrig)</span>
+                ${t('master.budgetOf', {
+                    used: project.progress.used_hours, budget: project.progress.budget_hours })}
+                <span class="muted">${t('master.budgetLeft', { rest: project.progress.remaining_hours })}</span>
                 <span class="progress">
                     <span class="progress__bar ${project.progress.percent > 100 ? 'is-over' : ''}"
                           style="width:${Math.min(100, project.progress.percent)}%"></span>
@@ -175,13 +176,13 @@ function drawSubprojects(root) {
                         </span>
                         <span class="row__meta">${sub.effective_rate} €</span>
                         <span class="row__actions">
-                            <button class="icon-btn" data-edit-subproject="${sub.id}" title="Bearbeiten">✎</button>
-                            <button class="icon-btn" data-delete-subproject="${sub.id}" title="Löschen">🗑</button>
+                            <button class="icon-btn" data-edit-subproject="${sub.id}" title="${t('common.edit')}">✎</button>
+                            <button class="icon-btn" data-delete-subproject="${sub.id}" title="${t('common.delete')}">🗑</button>
                         </span>
                     </span>
                 </li>`)}
         </ul>
-        ${project.subprojects.length ? '' : '<p class="muted column__empty">Keine Teilprojekte.</p>'}`;
+        ${project.subprojects.length ? '' : html`<p class="muted column__empty">${t('master.noSubprojects')}</p>`}`;
 }
 
 // -- Verhalten --------------------------------------------------------------
@@ -232,22 +233,22 @@ function bind(root) {
         if (editS) return editSubproject(root, Number(editS.dataset.editSubproject));
 
         const delC = target('delete-client');
-        if (delC) return remove(root, 'clients', Number(delC.dataset.deleteClient), 'Kunde');
+        if (delC) return remove(root, 'clients', Number(delC.dataset.deleteClient), t('common.client'));
         const delP = target('delete-project');
-        if (delP) return remove(root, 'projects', Number(delP.dataset.deleteProject), 'Projekt');
+        if (delP) return remove(root, 'projects', Number(delP.dataset.deleteProject), t('common.project'));
         const delS = target('delete-subproject');
-        if (delS) return remove(root, 'subprojects', Number(delS.dataset.deleteSubproject), 'Teilprojekt');
+        if (delS) return remove(root, 'subprojects', Number(delS.dataset.deleteSubproject), t('common.subproject'));
     });
 }
 
 async function remove(root, resource, id, label) {
-    if (!await confirmDialog(`${label} löschen`, `„${label}" wird gelöscht. Vorhandene Zeiten verhindern das.`)) return;
+    if (!await confirmDialog(t('master.deleteTitle', { label }), t('master.deleteText', { label }))) return;
     try {
         await api.delete(`/${resource}/${id}`);
         if (resource === 'clients') sel.clientId = null;
         if (resource === 'projects') sel.projectId = null;
         invalidateTree();
-        toast('Gelöscht.', 'ok', 2000);
+        toast(t('common.deleted'), 'ok', 2000);
         await masterView.render(root);
     } catch (error) {
         toastError(error);
@@ -261,39 +262,38 @@ async function editClient(root, id) {
 
     const node = document.createElement('div');
     node.innerHTML = html`
-        <label class="field"><span class="field__label">Name</span>
+        <label class="field"><span class="field__label">${t('common.name')}</span>
             <input class="input" name="name" value="${client?.name ?? ''}" required></label>
         <div class="filters__row">
-            <label class="field field--inline"><span class="field__label">Farbe</span>
+            <label class="field field--inline"><span class="field__label">${t('common.color')}</span>
                 <input class="input" type="color" name="color" value="${client?.color ?? '#2f6df6'}"></label>
-            <label class="field field--inline"><span class="field__label">Stundensatz</span>
+            <label class="field field--inline"><span class="field__label">${t('common.rate')}</span>
                 <input class="input" type="number" name="rate" step="0.01" min="0"
-                    value="${client?.rate ?? ''}" placeholder="Vorgabe"></label>
-            <label class="field field--inline"><span class="field__label">Sprache</span>
+                    value="${client?.rate ?? ''}" placeholder="${t('master.rateDefault')}"></label>
+            <label class="field field--inline"><span class="field__label">${t('common.language')}</span>
                 <select class="input" name="lang">
-                    <option value="de" ${client?.lang === 'en' ? '' : 'selected'}>Deutsch</option>
-                    <option value="en" ${client?.lang === 'en' ? 'selected' : ''}>English</option>
+                    ${LANGS.map((code) => html`
+                        <option value="${code}" ${(client?.lang ?? 'de') === code ? 'selected' : ''}>
+                            ${t('lang.' + code)}</option>`)}
                 </select></label>
         </div>
-        <label class="field"><span class="field__label">Ansprechpartner</span>
+        <label class="field"><span class="field__label">${t('master.contactName')}</span>
             <input class="input" name="contact_name" value="${client?.contact_name ?? ''}"></label>
-        <label class="field"><span class="field__label">E-Mail</span>
+        <label class="field"><span class="field__label">${t('common.email')}</span>
             <input class="input" type="email" name="contact_email" value="${client?.contact_email ?? ''}"></label>
-        <label class="field"><span class="field__label">Anschrift</span>
+        <label class="field"><span class="field__label">${t('master.address')}</span>
             <textarea class="input" name="contact_address" rows="3">${client?.contact_address ?? ''}</textarea></label>
-        <label class="field"><span class="field__label">Sichtbarkeit im Kundenportal</span>
+        <label class="field"><span class="field__label">${t('master.visibility')}</span>
             <input class="input" type="number" name="visibility_offset_days" step="1" min="0" max="365"
                 value="${client?.visibility_offset_days ?? 1}">
-            <span class="field__hint">Tage, die Einträge zurückliegen müssen, bevor sie im Kundenportal
-                sichtbar werden (nach Kalendertag, nicht rollierend). 0 = keine Einschränkung,
-                1 = heutiger Tag noch nicht sichtbar.</span></label>
+            <span class="field__hint">${t('master.visibilityHint')}</span></label>
         <label class="switch"><input type="checkbox" name="archived" ${client?.archived ? 'checked' : ''}>
-            <span>archiviert</span></label>`;
+            <span>${t('common.archivedLabel')}</span></label>`;
 
     const get = (n) => node.querySelector(`[name=${n}]`);
 
     await form(root, {
-        title: id ? 'Kunde bearbeiten' : 'Kunde anlegen',
+        title: id ? t('master.editClient') : t('master.addClient'),
         node,
         path: id ? `/clients/${id}` : '/clients',
         creating: !id,
@@ -318,26 +318,27 @@ async function editProject(root, id) {
 
     const node = document.createElement('div');
     node.innerHTML = html`
-        <p class="muted">Kunde: ${client.name}</p>
-        <label class="field"><span class="field__label">Name</span>
+        <p class="muted">${t('common.client')}: ${client.name}</p>
+        <label class="field"><span class="field__label">${t('common.name')}</span>
             <input class="input" name="name" value="${project?.name ?? ''}" required></label>
         <div class="filters__row">
-            <label class="field field--inline"><span class="field__label">Farbe</span>
+            <label class="field field--inline"><span class="field__label">${t('common.color')}</span>
                 <input class="input" type="color" name="color" value="${project?.own_color ?? client.color ?? '#2f6df6'}"></label>
-            <label class="field field--inline"><span class="field__label">Stundensatz</span>
+            <label class="field field--inline"><span class="field__label">${t('common.rate')}</span>
                 <input class="input" type="number" name="rate" step="0.01" min="0"
-                    value="${project?.rate ?? ''}" placeholder="erbt ${client.effective_rate}"></label>
-            <label class="field field--inline"><span class="field__label">Budget (Std.)</span>
+                    value="${project?.rate ?? ''}"
+                    placeholder="${t('master.rateInherits', { rate: client.effective_rate })}"></label>
+            <label class="field field--inline"><span class="field__label">${t('master.budget')}</span>
                 <input class="input" type="number" name="budget_hours" step="0.25" min="0"
-                    value="${project?.budget_hours ?? ''}" placeholder="ohne"></label>
+                    value="${project?.budget_hours ?? ''}" placeholder="${t('master.budgetNone')}"></label>
         </div>
         <label class="switch"><input type="checkbox" name="archived" ${project?.archived ? 'checked' : ''}>
-            <span>archiviert</span></label>`;
+            <span>${t('common.archivedLabel')}</span></label>`;
 
     const get = (n) => node.querySelector(`[name=${n}]`);
 
     await form(root, {
-        title: id ? 'Projekt bearbeiten' : 'Projekt anlegen',
+        title: id ? t('master.editProject') : t('master.addProject'),
         node,
         path: id ? `/projects/${id}` : '/projects',
         creating: !id,
@@ -360,18 +361,19 @@ async function editSubproject(root, id) {
     const node = document.createElement('div');
     node.innerHTML = html`
         <p class="muted">${currentClient()?.name} · ${project.name}</p>
-        <label class="field"><span class="field__label">Name</span>
+        <label class="field"><span class="field__label">${t('common.name')}</span>
             <input class="input" name="name" value="${sub?.name ?? ''}" required></label>
-        <label class="field"><span class="field__label">Stundensatz</span>
+        <label class="field"><span class="field__label">${t('common.rate')}</span>
             <input class="input" type="number" name="rate" step="0.01" min="0"
-                value="${sub?.rate ?? ''}" placeholder="erbt ${project.effective_rate}"></label>
+                value="${sub?.rate ?? ''}"
+                placeholder="${t('master.rateInherits', { rate: project.effective_rate })}"></label>
         <label class="switch"><input type="checkbox" name="archived" ${sub?.archived ? 'checked' : ''}>
-            <span>archiviert</span></label>`;
+            <span>${t('common.archivedLabel')}</span></label>`;
 
     const get = (n) => node.querySelector(`[name=${n}]`);
 
     await form(root, {
-        title: id ? 'Teilprojekt bearbeiten' : 'Teilprojekt anlegen',
+        title: id ? t('master.editSubproject') : t('master.addSubproject'),
         node,
         path: id ? `/subprojects/${id}` : '/subprojects',
         creating: !id,
@@ -404,6 +406,6 @@ async function form(root, { title, node, path, creating, collect }) {
     if (!saved) return;
 
     invalidateTree();
-    toast('Gespeichert.', 'ok', 2000);
+    toast(t('common.saved'), 'ok', 2000);
     await masterView.render(root);
 }

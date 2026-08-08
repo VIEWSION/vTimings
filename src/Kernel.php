@@ -130,7 +130,7 @@ final class Kernel
             $user = Auth::login($req, (string) $email, (string) $password);
 
             return Response::json([
-                'user' => $user->toArray(),
+                'user' => $user->toArray() + ['lang' => Auth::lang()],
                 'csrf' => Csrf::token(),
             ]);
         }, ['auth' => 'none', 'csrf' => false]);
@@ -143,10 +143,21 @@ final class Kernel
         $r->get('/api/auth/me', function (): array {
             $user = Auth::user();
             return [
-                'user' => $user?->toArray(),
+                'user' => $user === null ? null : $user->toArray() + ['lang' => Auth::lang()],
                 'csrf' => Csrf::token(),
             ];
         }, ['auth' => 'none']);
+
+        // Sprachumschalter der Oberfläche. Wo die Wahl landet, entscheidet
+        // Auth::setLang() – beim Kunden im Kundenprofil, beim Administrator
+        // in den Einstellungen.
+        $r->patch('/api/auth/lang', function (Request $req): array {
+            $v = new Support\Validator($req->body);
+            $lang = $v->enum('lang', Auth::LANGS, true);
+            $v->validate();
+
+            return ['lang' => Auth::setLang((string) $lang)];
+        }, ['auth' => 'user']);
 
         // -- Einstellungen --------------------------------------------------
         $r->get('/api/settings', function (): array {

@@ -2,6 +2,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree } from '../store.js';
+import { LANGS, t } from '../i18n.js';
 import { bindOnce, toastError } from '../ui.js';
 import { decimal, esc, html, money, todayISO } from '../util.js';
 
@@ -14,19 +15,14 @@ const filters = {
     group_by: 'client',
 };
 
-const GROUPS = [
-    ['client', 'Kunde'],
-    ['project', 'Projekt'],
-    ['subproject', 'Teilprojekt'],
-    ['month', 'Monat'],
-    ['week', 'Woche'],
-    ['day', 'Tag'],
-    ['year', 'Jahr'],
-];
+const GROUP_KEYS = ['client', 'project', 'subproject', 'month', 'week', 'day', 'year'];
+
+/** Beschriftung einer Gruppierung – erst beim Zeichnen, wegen der Sprache. */
+function groupLabel(key) {
+    return t('reports.group' + key[0].toUpperCase() + key.slice(1));
+}
 
 export const reportsView = {
-    title: 'Auswertung',
-
     async render(root) {
         await loadTree();
         const [{ formats }, { templates }] = await Promise.all([
@@ -39,81 +35,79 @@ export const reportsView = {
                 <form class="card filters" id="report-filters">
                     <div class="filters__row">
                         <label class="field field--inline">
-                            <span class="field__label">Von</span>
+                            <span class="field__label">${t('common.from')}</span>
                             <input class="input" type="date" name="from" value="${filters.from}">
                         </label>
                         <label class="field field--inline">
-                            <span class="field__label">Bis</span>
+                            <span class="field__label">${t('common.to')}</span>
                             <input class="input" type="date" name="to" value="${filters.to}">
                         </label>
                         <label class="field field--inline field--grow">
-                            <span class="field__label">Kunde</span>
+                            <span class="field__label">${t('common.client')}</span>
                             <select class="input" name="client_id"></select>
                         </label>
                         <label class="field field--inline field--grow">
-                            <span class="field__label">Projekt</span>
+                            <span class="field__label">${t('common.project')}</span>
                             <select class="input" name="project_id"></select>
                         </label>
                         <label class="field field--inline">
-                            <span class="field__label">Status</span>
+                            <span class="field__label">${t('common.status')}</span>
                             <select class="input" name="billed">
-                                <option value="">Alle</option>
-                                <option value="0">offen</option>
-                                <option value="1">abgerechnet</option>
+                                <option value="">${t('common.all')}</option>
+                                <option value="0">${t('common.billedOpen')}</option>
+                                <option value="1">${t('common.billedDone')}</option>
                             </select>
                         </label>
                     </div>
                     <div class="filters__row">
-                        <span class="field__label">Gruppieren nach</span>
+                        <span class="field__label">${t('reports.groupBy')}</span>
                         <div class="chips">
-                            ${GROUPS.map(([key, label]) => html`
+                            ${GROUP_KEYS.map((key) => html`
                                 <button type="button" class="chip ${filters.group_by === key ? 'is-active' : ''}"
-                                        data-group="${key}">${label}</button>`)}
+                                        data-group="${key}">${groupLabel(key)}</button>`)}
                         </div>
                     </div>
                 </form>
 
-                <div id="stats"><div class="loading">Lade …</div></div>
+                <div id="stats"><div class="loading">${t('common.loading')}</div></div>
 
                 <section class="card">
-                    <header class="card__head"><h2>Leistungsnachweis</h2></header>
+                    <header class="card__head"><h2>${t('reports.statement')}</h2></header>
                     <div class="card__body">
                         <div class="filters__row">
                             <label class="field field--inline field--grow">
-                                <span class="field__label">Vorlage</span>
+                                <span class="field__label">${t('reports.template')}</span>
                                 <select class="input" id="template">
                                     ${templates.map((tpl) => html`<option value="${tpl.key}">${tpl.label}</option>`)}
                                 </select>
                             </label>
                             <label class="field field--inline">
-                                <span class="field__label">Sprache</span>
+                                <span class="field__label">${t('common.language')}</span>
                                 <select class="input" id="lang">
-                                    <option value="">nach Kunde</option>
-                                    <option value="de">Deutsch</option>
-                                    <option value="en">English</option>
+                                    <option value="">${t('reports.langByClient')}</option>
+                                    ${LANGS.map((code) => html`<option value="${code}">${t('lang.' + code)}</option>`)}
                                 </select>
                             </label>
                         </div>
                         <div class="filters__row">
-                            <label class="switch"><input type="checkbox" id="opt-costs"> <span>Kosten ausweisen</span></label>
-                            <label class="switch"><input type="checkbox" id="opt-group-days"> <span>pro Tag zusammenfassen</span></label>
-                            <label class="switch"><input type="checkbox" id="opt-times"> <span>Uhrzeiten zeigen</span></label>
-                            <label class="switch"><input type="checkbox" id="opt-notes" checked> <span>Notizen</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-costs"> <span>${t('reports.optCosts')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-group-days"> <span>${t('reports.optGroupDays')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-times"> <span>${t('reports.optTimes')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-notes" checked> <span>${t('common.notes')}</span></label>
                         </div>
-                        <button class="btn btn--primary" id="open-report">Nachweis öffnen</button>
-                        <p class="muted">Öffnet die Druckansicht in einem neuen Tab. Dort „Drucken“ und
-                            im Druckdialog „Als PDF sichern“.</p>
+                        <button class="btn btn--primary" id="open-report">${t('reports.open')}</button>
+                        <p class="muted">${t('reports.openHint')}</p>
                     </div>
                 </section>
 
                 <section class="card">
-                    <header class="card__head"><h2>Export</h2></header>
+                    <header class="card__head"><h2>${t('reports.export')}</h2></header>
                     <div class="card__body">
                         <div class="chips">
                             ${formats.map((f) => html`
                                 <button class="btn" data-export="${f.key}">${f.label}</button>`)}
                         </div>
-                        <p class="muted">Exportiert genau die oben gefilterten Einträge.</p>
+                        <p class="muted">${t('reports.exportHint')}</p>
                     </div>
                 </section>
             </section>`;
@@ -127,7 +121,7 @@ export const reportsView = {
 function fillSelects(root) {
     const clients = state.tree?.clients || [];
     const clientSelect = root.querySelector('[name=client_id]');
-    clientSelect.innerHTML = '<option value="">Alle</option>' +
+    clientSelect.innerHTML = `<option value="">${esc(t('common.all'))}</option>` +
         clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     clientSelect.value = filters.client_id;
 
@@ -144,7 +138,7 @@ function fillProjects(root) {
         .filter((c) => !clientId || c.id === clientId)
         .flatMap((c) => c.projects.map((p) => ({ ...p, client: c.name })));
 
-    select.innerHTML = '<option value="">Alle</option>' + projects
+    select.innerHTML = `<option value="">${esc(t('common.all'))}</option>` + projects
         .map((p) => `<option value="${p.id}">${esc(clientId ? p.name : p.client + ' | ' + p.name)}</option>`)
         .join('');
     select.value = projects.some((p) => String(p.id) === filters.project_id) ? filters.project_id : '';
@@ -212,13 +206,13 @@ function queryFilters() {
 
 async function refresh(root) {
     const host = root.querySelector('#stats');
-    host.innerHTML = '<div class="loading">Lade …</div>';
+    host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
     try {
         const data = await api.get('/stats', { ...queryFilters(), group_by: filters.group_by });
 
         if (!data.groups.length) {
-            host.innerHTML = '<div class="card"><p class="muted card__body">Keine Einträge im gewählten Zeitraum.</p></div>';
+            host.innerHTML = html`<div class="card"><p class="muted card__body">${t('entries.empty')}</p></div>`;
             return;
         }
 
@@ -226,19 +220,21 @@ async function refresh(root) {
 
         host.innerHTML = html`
             <div class="summary card">
-                <span><strong>${data.totals.hhmm}</strong> <span class="muted">Stunden</span></span>
+                <span><strong>${data.totals.hhmm}</strong> <span class="muted">${t('common.hours')}</span></span>
                 <span><strong>${money(data.totals.amount)}</strong></span>
-                <span class="muted">${data.totals.entries} Einträge · ${data.groups.length} Gruppen</span>
+                <span class="muted">
+                    ${t('reports.groupsCount', { entries: data.totals.entries, groups: data.groups.length })}
+                </span>
             </div>
             <section class="card">
                 <table class="table table--stats">
                     <thead>
                         <tr>
-                            <th>${GROUPS.find(([k]) => k === filters.group_by)?.[1] ?? ''}</th>
-                            <th class="num">Dauer</th>
-                            <th class="num">Stunden</th>
-                            <th class="num">Betrag</th>
-                            <th class="num">Einträge</th>
+                            <th>${groupLabel(filters.group_by)}</th>
+                            <th class="num">${t('common.duration')}</th>
+                            <th class="num">${t('common.hoursHead')}</th>
+                            <th class="num">${t('common.amount')}</th>
+                            <th class="num">${t('common.entriesHead')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -259,6 +255,6 @@ async function refresh(root) {
             </section>`;
     } catch (error) {
         toastError(error);
-        host.innerHTML = '<div class="card"><p class="card__body">Konnte nicht geladen werden.</p></div>';
+        host.innerHTML = html`<div class="card"><p class="card__body">${t('common.loadFailed')}</p></div>`;
     }
 }

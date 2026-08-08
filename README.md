@@ -70,6 +70,26 @@ return [
 
 ---
 
+## Sprache
+
+Oberfläche und Ausdrucke gibt es auf Deutsch und Englisch. Umgeschaltet wird
+über `DE | EN` in der Kopfzeile – auch schon auf dem Anmeldebildschirm.
+
+Wo die Wahl landet, hängt vom Zugang ab:
+
+* **Kundenzugang** → `clients.lang` im Kundenprofil. Damit gilt dieselbe
+  Sprache für das Portal und für den Leistungsnachweis, den der Kunde bekommt.
+  Der Administrator gibt sie in den Stammdaten vor, der Kunde kann sie
+  jederzeit selbst ändern.
+* **Administrator** → Einstellung `ui_lang`, gilt nur für die eigene Ansicht.
+
+Die Texte der Oberfläche stehen in `assets/js/i18n.js` (`t('schlüssel')`),
+die der Druckvorlagen in `src/Report/Translator.php`. Deutsch ist die
+Leitsprache: fehlt ein Schlüssel in `en`, erscheint der deutsche Text.
+Zahlen, Beträge und Datumsangaben folgen der Sprache (`de-DE` bzw. `en-GB`).
+
+---
+
 ## Kommandos
 
 ```bash
@@ -129,7 +149,8 @@ zusätzlich `X-CSRF-Token` aus `GET /api/auth/me`.
 ```
 GET    /api/health                     ohne Anmeldung
 POST   /api/auth/login · logout · password
-GET    /api/auth/me
+GET    /api/auth/me                    enthält die Oberflächensprache
+PATCH  /api/auth/lang                  { "lang": "de" | "en" }
 
 GET    /api/tree                       Kunden > Projekte > Teilprojekte mit Summen
 CRUD   /api/clients · projects · subprojects

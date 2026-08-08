@@ -83,7 +83,7 @@ function paint(root) {
                         <h2>Projekte</h2>
                         ${project
                             ? html`<button class="btn btn--small" data-clear>Auswahl aufheben</button>`
-                            : html`<span class="badge">${data.projects.length}</span>`}
+                            : html`<span class="badge badge--head">${data.projects.length}</span>`}
                     </header>
                     <table class="table table--stats ${selectable ? 'table--clickable' : ''}">
                         <thead>

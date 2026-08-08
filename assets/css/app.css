@@ -201,6 +201,11 @@ pre {
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
+    /* Reicht für ein .badge oder ein .btn--small als zweites Element. So
+       behält die Kopfzeile ihre Höhe, auch wenn dieses Element (z. B. im
+       Kundenportal) je nach Auswahl ein- und ausgeblendet oder gegen einen
+       Button getauscht wird – siehe .badge--head weiter unten. */
+    min-height: 3.25rem;
     border-bottom: 1px solid var(--border);
 }
 
@@ -216,6 +221,15 @@ pre {
     background: var(--surface-2);
     border: 1px solid var(--border);
     white-space: nowrap;
+}
+
+/* In manchen card__head-Leisten wechselt der Inhalt zwischen diesem Badge
+   und einem .btn--small (z. B. Portal-Projektauswahl) – gleiche Höhe wie
+   .btn--small verhindert das Wackeln der Kopfzeile beim Umschalten. */
+.badge--head {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
 }
 
 .tag {

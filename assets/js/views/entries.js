@@ -11,14 +11,26 @@ const filters = {
     from: startOfMonth(),
     to: todayISO(),
     client_id: '',
+    project_id: '',
+    subproject_id: '',
     q: '',
     billed: '',
     trashed: '0',
 };
 
+let initialized = false;
+
 /** Kundenzugänge sehen dieselbe Liste, dürfen aber nichts ändern. */
 function canEdit() {
     return state.user?.role === 'admin';
+}
+
+/**
+ * Die Kundenauswahl lohnt nur, wenn es überhaupt mehrere gibt. Ein
+ * Kundenzugang sieht ohnehin nur den eigenen.
+ */
+function showClientFilter() {
+    return (state.tree?.clients?.length ?? 0) > 1;
 }
 
 export const entriesView = {
@@ -26,6 +38,17 @@ export const entriesView = {
 
     async render(root) {
         await loadTree();
+
+        if (!initialized) {
+            initialized = true;
+            // Kundenzugänge interessiert der gesamte Projektverlauf, nicht der
+            // laufende Monat – dort stünde meist eine leere Liste.
+            if (!canEdit()) {
+                filters.from = '';
+                filters.to = '';
+            }
+        }
+
         root.innerHTML = html`
             <section class="stack">
                 <form class="card filters" id="filters">
@@ -38,16 +61,25 @@ export const entriesView = {
                             <span class="field__label">Bis</span>
                             <input class="input" type="date" name="to" value="${filters.to}">
                         </label>
+                        ${showClientFilter() ? html`
+                            <label class="field field--inline field--grow">
+                                <span class="field__label">Kunde</span>
+                                <select class="input" name="client_id"><option value="">Alle</option></select>
+                            </label>` : ''}
                         <label class="field field--inline field--grow">
-                            <span class="field__label">Kunde</span>
-                            <select class="input" name="client_id"><option value="">Alle</option></select>
+                            <span class="field__label">Projekt</span>
+                            <select class="input" name="project_id"><option value="">Alle</option></select>
+                        </label>
+                        <label class="field field--inline field--grow">
+                            <span class="field__label">Teilprojekt</span>
+                            <select class="input" name="subproject_id"><option value="">Alle</option></select>
                         </label>
                     </div>
                     <div class="filters__row">
                         <label class="field field--inline field--grow">
                             <span class="field__label">Suche</span>
                             <input class="input" type="search" name="q" value="${filters.q}"
-                                placeholder="Notizen, Kunde, Projekt …">
+                                placeholder="Notizen, Projekt, Teilprojekt …">
                         </label>
                         <label class="field field--inline">
                             <span class="field__label">Status</span>
@@ -65,6 +97,8 @@ export const entriesView = {
                             <button type="button" class="chip" data-range="month">Dieser Monat</button>
                             <button type="button" class="chip" data-range="lastmonth">Letzter Monat</button>
                             <button type="button" class="chip" data-range="year">Dieses Jahr</button>
+                            <button type="button" class="chip" data-range="all">Gesamt</button>
+                            <button type="button" class="chip" data-reset>Filter zurücksetzen</button>
                         </div>
                         ${canEdit() ? html`
                             <label class="switch">
@@ -76,39 +110,111 @@ export const entriesView = {
                 <div id="results"><div class="loading">Lade …</div></div>
             </section>`;
 
-        fillClients(root);
+        fillFilters(root);
         bind(root);
         await refresh(root);
     },
 };
 
-function fillClients(root) {
-    const select = root.querySelector('[name=client_id]');
+/** Kunden-, Projekt- und Teilprojektauswahl befüllen und aufeinander abstimmen. */
+function fillFilters(root) {
     const clients = state.tree?.clients || [];
-    select.innerHTML = '<option value="">Alle</option>' +
-        clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-    select.value = filters.client_id;
+    const clientSelect = root.querySelector('[name=client_id]');
+
+    if (clientSelect) {
+        clientSelect.innerHTML = '<option value="">Alle Kunden</option>' +
+            clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+        clientSelect.value = filters.client_id;
+    }
+
+    fillProjects(root);
+
     root.querySelector('[name=billed]').value = filters.billed;
-    root.querySelector('[name=trashed]').checked = filters.trashed === '1';
+    // Nur Administratoren haben den Papierkorb-Schalter.
+    const trashed = root.querySelector('[name=trashed]');
+    if (trashed) trashed.checked = filters.trashed === '1';
+}
+
+function fillProjects(root) {
+    const clients = state.tree?.clients || [];
+    const clientId = Number(filters.client_id) || null;
+    const select = root.querySelector('[name=project_id]');
+
+    const projects = clients
+        .filter((c) => !clientId || c.id === clientId)
+        .flatMap((c) => c.projects.map((p) => ({ ...p, client: c.name })));
+
+    const many = clients.length > 1 && !clientId;
+    select.innerHTML = '<option value="">Alle Projekte</option>' + projects
+        .map((p) => `<option value="${p.id}">${esc(many ? `${p.client} | ${p.name}` : p.name)}</option>`)
+        .join('');
+
+    // Auswahl nur halten, wenn sie zum aktuellen Kunden noch passt.
+    select.value = projects.some((p) => String(p.id) === filters.project_id) ? filters.project_id : '';
+    filters.project_id = select.value;
+
+    fillSubprojects(root);
+}
+
+function fillSubprojects(root) {
+    const clients = state.tree?.clients || [];
+    const projectId = Number(filters.project_id) || null;
+    const select = root.querySelector('[name=subproject_id]');
+
+    const projects = clients.flatMap((c) => c.projects);
+    const subs = projects
+        .filter((p) => !projectId || p.id === projectId)
+        .flatMap((p) => p.subprojects.map((s) => ({ ...s, project: p.name })));
+
+    // Ohne gewähltes Projekt wäre die Liste unübersichtlich lang.
+    select.disabled = !projectId;
+    select.innerHTML = projectId
+        ? '<option value="">Alle Teilprojekte</option>' +
+          subs.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')
+        : '<option value="">erst Projekt wählen</option>';
+
+    select.value = subs.some((s) => String(s.id) === filters.subproject_id) ? filters.subproject_id : '';
+    filters.subproject_id = select.value;
 }
 
 function bind(root) {
     const form = root.querySelector('#filters');
-    const update = () => {
+
+    const read = () => {
         const data = new FormData(form);
         filters.from = data.get('from') || '';
         filters.to = data.get('to') || '';
         filters.client_id = data.get('client_id') || '';
+        filters.project_id = data.get('project_id') || '';
+        filters.subproject_id = data.get('subproject_id') || '';
         filters.q = data.get('q') || '';
         filters.billed = data.get('billed') || '';
         filters.trashed = form.trashed?.checked ? '1' : '0';
+    };
+
+    const update = () => {
+        read();
         refresh(root);
     };
 
-    form.addEventListener('change', update);
+    form.addEventListener('change', (event) => {
+        read();
+        // Die Auswahl hängt zusammen: ein anderer Kunde ändert die Projekte,
+        // ein anderes Projekt die Teilprojekte.
+        if (event.target.name === 'client_id') fillProjects(root);
+        else if (event.target.name === 'project_id') fillSubprojects(root);
+        refresh(root);
+    });
+
     form.querySelector('[name=q]').addEventListener('input', debounce(update, 350));
 
     form.addEventListener('click', (event) => {
+        if (event.target.closest('[data-reset]')) {
+            resetFilters(form);
+            fillFilters(root);
+            return refresh(root);
+        }
+
         const range = event.target.closest('[data-range]');
         if (!range) return;
         applyRange(form, range.dataset.range);
@@ -142,10 +248,32 @@ function bind(root) {
     });
 }
 
+function resetFilters(form) {
+    // Dieselbe Vorgabe wie beim ersten Aufruf: Kunden sehen alles,
+    // Administratoren den laufenden Monat.
+    Object.assign(filters, {
+        from: canEdit() ? startOfMonth() : '',
+        to: canEdit() ? todayISO() : '',
+        client_id: '',
+        project_id: '',
+        subproject_id: '',
+        q: '',
+        billed: '',
+        trashed: '0',
+    });
+    form.from.value = filters.from;
+    form.to.value = filters.to;
+    form.q.value = '';
+    form.billed.value = '';
+    if (form.trashed) form.trashed.checked = false;
+}
+
 function applyRange(form, range) {
     const today = todayISO();
     const set = (from, to) => { form.from.value = from; form.to.value = to; };
 
+    // "Gesamt" heißt: keine Datumsgrenzen – der Server liefert dann alles.
+    if (range === 'all') return set('', '');
     if (range === 'today') return set(today, today);
     if (range === 'week') {
         const date = new Date();

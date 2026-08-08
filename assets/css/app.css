@@ -548,7 +548,19 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 .portal__totals .muted { font-size: 0.8rem; }
 .portal__amount { margin-top: 0.35rem; font-weight: 650; font-variant-numeric: tabular-nums; }
 
+.portal__lifetime { margin-top: 0.4rem; font-size: 0.78rem; }
+.portal__ranges { justify-content: flex-end; }
 .portal__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Anklickbare Zeilen (Projektauswahl im Portal) */
+.table--clickable tbody tr { cursor: pointer; }
+.table--clickable tbody tr.is-empty { opacity: 0.5; }
+.table--clickable tbody tr.is-selected {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.table--clickable tbody tr.is-selected td:first-child { font-weight: 650; }
+.table__hint { padding-top: 0.6rem; font-size: 0.8rem; }
+.table__more { margin: 0.5rem 1rem 0; }
 
 .budgets { list-style: none; margin: 0; padding: 0; }
 .budgets__item { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); }

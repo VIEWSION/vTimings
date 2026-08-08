@@ -18,6 +18,9 @@ const ADMIN_ROUTES = {
     '/auswertung': reportsView,
     '/stammdaten': masterView,
     '/einstellungen': settingsView,
+    // Nicht in der Navigation: Vorschau auf das Kundenportal, erreichbar über
+    // die Stammdaten ("Kundenansicht"). So sieht man, was der Kunde sieht.
+    '/uebersicht': portalView,
 };
 
 const CLIENT_ROUTES = {

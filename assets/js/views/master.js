@@ -116,6 +116,8 @@ function drawProjects(root) {
         ${{ __raw: columnHead(client.name, 'Kunden', 'Projekt anlegen', 'data-add-project') }}
         <div class="column__tools">
             <button class="btn btn--ghost btn--small" data-edit-client="${client.id}">Kunde bearbeiten</button>
+            <a class="btn btn--ghost btn--small" href="#/uebersicht?client_id=${client.id}"
+               title="So sieht der Kunde sein Portal">Kundenansicht</a>
             <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">Löschen</button>
         </div>
         <ul class="rows">

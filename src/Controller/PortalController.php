@@ -63,9 +63,14 @@ final class PortalController
             throw HttpException::notFound('Kunde nicht gefunden.');
         }
 
-        $today = Clock::local(Clock::now());
-        $from = $today->modify('-' . (self::DAYS - 1) . ' days')->format('Y-m-d');
-        $to = $today->format('Y-m-d');
+        // Kalendertag-Grenze statt rollierender Stunden: mit dem
+        // Standard-Offset von 1 wird der heutige Tag erst ab Mitternacht
+        // sichtbar, damit frische/unfertige Einträge nicht sofort auftauchen
+        // (Issue #3). 0 hebt die Einschränkung auf.
+        $offsetDays = max(0, $client['visibility_offset_days']);
+        $cutoff = Clock::local(Clock::now())->modify('-' . $offsetDays . ' days');
+        $to = $cutoff->format('Y-m-d');
+        $from = $cutoff->modify('-' . (self::DAYS - 1) . ' days')->format('Y-m-d');
 
         $filters = ['client_id' => $clientId, 'from' => $from, 'to' => $to];
         $entries = EntryRepo::allMatching($filters + ['order' => 'desc']);

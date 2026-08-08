@@ -204,6 +204,9 @@ final class MasterDataController
         if ($v->has('lang')) {
             $data['lang'] = $v->enum('lang', ['de', 'en'], true);
         }
+        if ($v->has('visibility_offset_days')) {
+            $data['visibility_offset_days'] = $v->int('visibility_offset_days', true, 0, 365);
+        }
         if ($v->has('archived')) {
             $data['archived'] = $v->bool('archived', false);
         }

@@ -281,6 +281,12 @@ async function editClient(root, id) {
             <input class="input" type="email" name="contact_email" value="${client?.contact_email ?? ''}"></label>
         <label class="field"><span class="field__label">Anschrift</span>
             <textarea class="input" name="contact_address" rows="3">${client?.contact_address ?? ''}</textarea></label>
+        <label class="field"><span class="field__label">Sichtbarkeit im Kundenportal</span>
+            <input class="input" type="number" name="visibility_offset_days" step="1" min="0" max="365"
+                value="${client?.visibility_offset_days ?? 1}">
+            <span class="field__hint">Tage, die Einträge zurückliegen müssen, bevor sie im Kundenportal
+                sichtbar werden (nach Kalendertag, nicht rollierend). 0 = keine Einschränkung,
+                1 = heutiger Tag noch nicht sichtbar.</span></label>
         <label class="switch"><input type="checkbox" name="archived" ${client?.archived ? 'checked' : ''}>
             <span>archiviert</span></label>`;
 
@@ -299,6 +305,7 @@ async function editClient(root, id) {
             contact_name: get('contact_name').value,
             contact_email: get('contact_email').value,
             contact_address: get('contact_address').value,
+            visibility_offset_days: Number(get('visibility_offset_days').value || 0),
             archived: get('archived').checked,
         }),
     });

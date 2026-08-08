@@ -100,6 +100,7 @@ final class ClientRepo
             'contact_name'    => $data['contact_name'] ?? '',
             'contact_email'   => $data['contact_email'] ?? '',
             'contact_address' => $data['contact_address'] ?? '',
+            'visibility_offset_days' => (int) ($data['visibility_offset_days'] ?? 1),
             'archived'        => !empty($data['archived']) ? 1 : 0,
             'sort'            => (int) ($data['sort'] ?? 0),
             'created_at'      => $now,
@@ -118,7 +119,8 @@ final class ClientRepo
 
         $fields = array_intersect_key($data, array_flip([
             'name', 'color', 'rate', 'currency', 'lang', 'note',
-            'contact_name', 'contact_email', 'contact_address', 'archived', 'sort',
+            'contact_name', 'contact_email', 'contact_address',
+            'visibility_offset_days', 'archived', 'sort',
         ]));
         if (isset($fields['archived'])) {
             $fields['archived'] = $fields['archived'] ? 1 : 0;
@@ -179,6 +181,7 @@ final class ClientRepo
             'contact_name'    => (string) $row['contact_name'],
             'contact_email'   => (string) $row['contact_email'],
             'contact_address' => (string) $row['contact_address'],
+            'visibility_offset_days' => (int) $row['visibility_offset_days'],
             'archived'        => (bool) $row['archived'],
             'sort'            => (int) $row['sort'],
             'created_at'      => Clock::iso((int) $row['created_at']),

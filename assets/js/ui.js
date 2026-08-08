@@ -58,8 +58,15 @@ export function dialog({ title, body, buttons = [], onMount }) {
             el.textContent = button.label;
             el.addEventListener('click', async () => {
                 if (button.validate) {
-                    const ok = await button.validate(overlay);
-                    if (ok === false) return;
+                    // Während des Speicherns sperren, sonst löst ein zweiter
+                    // Klick denselben Vorgang noch einmal aus.
+                    el.disabled = true;
+                    try {
+                        const ok = await button.validate(overlay);
+                        if (ok === false) return;
+                    } finally {
+                        el.disabled = false;
+                    }
                 }
                 close(button.value ?? button.label);
             });
@@ -84,6 +91,79 @@ export function dialog({ title, body, buttons = [], onMount }) {
         onMount?.(overlay);
         overlay.querySelector('input, select, textarea, button')?.focus();
     });
+}
+
+/**
+ * Zeigt Feldfehler aus einer 422 direkt am betroffenen Eingabefeld.
+ *
+ * @returns {boolean} true, wenn jeder gemeldete Fehler ein Feld gefunden hat.
+ *                    Nur dann ist die Meldung im Dialog vollständig – sonst
+ *                    braucht es zusätzlich einen Toast.
+ */
+export function showFieldErrors(root, error) {
+    for (const el of root.querySelectorAll('.field__error')) el.remove();
+    for (const el of root.querySelectorAll('.is-invalid')) el.classList.remove('is-invalid');
+
+    const fields = error?.fields ?? {};
+    const names = Object.keys(fields);
+    let placed = 0;
+
+    for (const name of names) {
+        const input = root.querySelector(`[name="${CSS.escape(name)}"]`);
+        if (!input) continue;
+
+        input.classList.add('is-invalid');
+        const hint = document.createElement('span');
+        hint.className = 'field__error';
+        hint.textContent = fields[name];
+        (input.closest('.field') ?? input.parentElement)?.append(hint);
+
+        if (placed === 0) {
+            input.focus();
+            input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+        placed++;
+    }
+
+    return names.length > 0 && placed === names.length;
+}
+
+/**
+ * Dialog mit Speichern-Aktion.
+ *
+ * Anders als beim einfachen dialog() bleibt das Fenster bei einem Fehler
+ * offen und die Eingaben stehen – der Fehler erscheint am jeweiligen Feld.
+ * Geschlossen wird erst, wenn `save` ohne Ausnahme durchläuft.
+ *
+ * @returns Rückgabe von `save` (bzw. true) oder null bei Abbruch.
+ */
+export async function saveDialog({ title, body, save, saveLabel = 'Speichern', cancelLabel = 'Abbrechen' }) {
+    let result;
+
+    const outcome = await dialog({
+        title,
+        body,
+        buttons: [
+            { label: cancelLabel, value: null },
+            {
+                label: saveLabel,
+                value: '__saved',
+                kind: 'primary',
+                validate: async (overlay) => {
+                    try {
+                        result = await save(overlay);
+                        return true;
+                    } catch (error) {
+                        const complete = showFieldErrors(overlay, error);
+                        if (!complete) toastError(error);
+                        return false;
+                    }
+                },
+            },
+        ],
+    });
+
+    return outcome === '__saved' ? (result ?? true) : null;
 }
 
 export async function confirmDialog(title, message, confirmLabel = 'Löschen') {

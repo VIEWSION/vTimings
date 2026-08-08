@@ -3,7 +3,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree, invalidateTree } from '../store.js';
-import { confirmDialog, dialog, toast, toastError } from '../ui.js';
+import { confirmDialog, saveDialog, toast, toastError } from '../ui.js';
 import { esc, hhmm, html, money } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
@@ -281,21 +281,24 @@ async function editClient(root, id) {
         <label class="switch"><input type="checkbox" name="archived" ${client?.archived ? 'checked' : ''}>
             <span>archiviert</span></label>`;
 
-    if (await form(node, id ? 'Kunde bearbeiten' : 'Kunde anlegen') !== 'save') return;
-
     const get = (n) => node.querySelector(`[name=${n}]`);
-    const payload = {
-        name: get('name').value.trim(),
-        color: get('color').value,
-        rate: get('rate').value === '' ? null : Number(get('rate').value),
-        lang: get('lang').value,
-        contact_name: get('contact_name').value,
-        contact_email: get('contact_email').value,
-        contact_address: get('contact_address').value,
-        archived: get('archived').checked,
-    };
 
-    await save(root, id ? `/clients/${id}` : '/clients', payload, !id);
+    await form(root, {
+        title: id ? 'Kunde bearbeiten' : 'Kunde anlegen',
+        node,
+        path: id ? `/clients/${id}` : '/clients',
+        creating: !id,
+        collect: () => ({
+            name: get('name').value.trim(),
+            color: get('color').value,
+            rate: get('rate').value === '' ? null : Number(get('rate').value),
+            lang: get('lang').value,
+            contact_name: get('contact_name').value,
+            contact_email: get('contact_email').value,
+            contact_address: get('contact_address').value,
+            archived: get('archived').checked,
+        }),
+    });
 }
 
 async function editProject(root, id) {
@@ -321,19 +324,22 @@ async function editProject(root, id) {
         <label class="switch"><input type="checkbox" name="archived" ${project?.archived ? 'checked' : ''}>
             <span>archiviert</span></label>`;
 
-    if (await form(node, id ? 'Projekt bearbeiten' : 'Projekt anlegen') !== 'save') return;
-
     const get = (n) => node.querySelector(`[name=${n}]`);
-    const payload = {
-        client_id: client.id,
-        name: get('name').value.trim(),
-        color: get('color').value,
-        rate: get('rate').value === '' ? null : Number(get('rate').value),
-        budget_hours: get('budget_hours').value === '' ? null : Number(get('budget_hours').value),
-        archived: get('archived').checked,
-    };
 
-    await save(root, id ? `/projects/${id}` : '/projects', payload, !id);
+    await form(root, {
+        title: id ? 'Projekt bearbeiten' : 'Projekt anlegen',
+        node,
+        path: id ? `/projects/${id}` : '/projects',
+        creating: !id,
+        collect: () => ({
+            client_id: client.id,
+            name: get('name').value.trim(),
+            color: get('color').value,
+            rate: get('rate').value === '' ? null : Number(get('rate').value),
+            budget_hours: get('budget_hours').value === '' ? null : Number(get('budget_hours').value),
+            archived: get('archived').checked,
+        }),
+    });
 }
 
 async function editSubproject(root, id) {
@@ -352,38 +358,42 @@ async function editSubproject(root, id) {
         <label class="switch"><input type="checkbox" name="archived" ${sub?.archived ? 'checked' : ''}>
             <span>archiviert</span></label>`;
 
-    if (await form(node, id ? 'Teilprojekt bearbeiten' : 'Teilprojekt anlegen') !== 'save') return;
-
     const get = (n) => node.querySelector(`[name=${n}]`);
-    const payload = {
-        project_id: project.id,
-        name: get('name').value.trim(),
-        rate: get('rate').value === '' ? null : Number(get('rate').value),
-        archived: get('archived').checked,
-    };
 
-    await save(root, id ? `/subprojects/${id}` : '/subprojects', payload, !id);
-}
-
-function form(node, title) {
-    return dialog({
-        title,
-        body: node,
-        buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Speichern', value: 'save', kind: 'primary' },
-        ],
+    await form(root, {
+        title: id ? 'Teilprojekt bearbeiten' : 'Teilprojekt anlegen',
+        node,
+        path: id ? `/subprojects/${id}` : '/subprojects',
+        creating: !id,
+        collect: () => ({
+            project_id: project.id,
+            name: get('name').value.trim(),
+            rate: get('rate').value === '' ? null : Number(get('rate').value),
+            archived: get('archived').checked,
+        }),
     });
 }
 
-async function save(root, path, payload, creating) {
-    try {
-        if (creating) await api.post(path, payload);
-        else await api.patch(path, payload);
-        invalidateTree();
-        toast('Gespeichert.', 'ok', 2000);
-        await masterView.render(root);
-    } catch (error) {
-        toastError(error);
-    }
+/**
+ * Formular anzeigen und speichern. Bleibt bei einem Fehler offen, damit
+ * die Eingaben nicht verloren gehen.
+ *
+ * @param collect Liefert die zu sendenden Daten – erst beim Speichern
+ *                aufgerufen, also immer mit dem aktuellen Formularstand.
+ */
+async function form(root, { title, node, path, creating, collect }) {
+    const saved = await saveDialog({
+        title,
+        body: node,
+        save: async () => {
+            const payload = collect();
+            if (creating) await api.post(path, payload);
+            else await api.patch(path, payload);
+        },
+    });
+    if (!saved) return;
+
+    invalidateTree();
+    toast('Gespeichert.', 'ok', 2000);
+    await masterView.render(root);
 }

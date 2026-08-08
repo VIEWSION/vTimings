@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree, invalidateTree, flatSubprojects } from '../store.js';
-import { confirmDialog, dialog, pickSubproject, toast, toastError } from '../ui.js';
+import { confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
     dateTimeToISO, dayLabel, debounce, esc, html, money, shiftDays, startOfMonth, todayISO,
 } from '../util.js';
@@ -299,43 +299,41 @@ async function editEntry(root, id) {
         node.querySelector('[data-pick]').textContent = sub?.path || '—';
     });
 
-    const result = await dialog({
+    const get = (name) => node.querySelector(`[name=${name}]`);
+    let overlaps = 0;
+
+    const saved = await saveDialog({
         title: id ? 'Eintrag bearbeiten' : 'Eintrag hinzufügen',
         body: node,
-        buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Speichern', value: 'save', kind: 'primary' },
-        ],
-    });
-    if (result !== 'save') return;
+        save: async () => {
+            const date = get('date').value;
+            // Endzeit vor Startzeit heißt: über Mitternacht hinaus.
+            const endDate = get('end').value < get('start').value ? shiftDays(date, 1) : date;
 
-    const get = (name) => node.querySelector(`[name=${name}]`);
-    const date = get('date').value;
-    const endDate = get('end').value < get('start').value ? shiftDays(date, 1) : date;
+            const payload = {
+                subproject_id: subprojectId,
+                started_at: dateTimeToISO(date, get('start').value),
+                ended_at: dateTimeToISO(endDate, get('end').value),
+                note: get('note').value,
+                billable: get('billable').checked,
+                round: get('round').checked,
+                rate: get('rate').value === '' ? null : Number(get('rate').value),
+            };
 
-    const payload = {
-        subproject_id: subprojectId,
-        started_at: dateTimeToISO(date, get('start').value),
-        ended_at: dateTimeToISO(endDate, get('end').value),
-        note: get('note').value,
-        billable: get('billable').checked,
-        round: get('round').checked,
-        rate: get('rate').value === '' ? null : Number(get('rate').value),
-    };
-
-    try {
-        if (id) {
-            await api.patch(`/entries/${id}`, payload);
-        } else {
-            const created = await api.post('/entries', payload);
-            if (created.overlaps?.length) {
-                toast(`Hinweis: überschneidet sich mit ${created.overlaps.length} anderen Eintrag/Einträgen.`, 'info', 6000);
+            if (id) {
+                await api.patch(`/entries/${id}`, payload);
+            } else {
+                const created = await api.post('/entries', payload);
+                overlaps = created.overlaps?.length ?? 0;
             }
-        }
-        invalidateTree();
-        toast('Gespeichert.', 'ok', 2000);
-        await refresh(root);
-    } catch (error) {
-        toastError(error);
+        },
+    });
+    if (!saved) return;
+
+    if (overlaps) {
+        toast(`Hinweis: überschneidet sich mit ${overlaps} anderen Eintrag/Einträgen.`, 'info', 6000);
     }
+    invalidateTree();
+    toast('Gespeichert.', 'ok', 2000);
+    await refresh(root);
 }

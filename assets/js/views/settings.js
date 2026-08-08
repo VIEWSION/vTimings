@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { state, loadSettings, invalidateTree } from '../store.js';
-import { dialog, toast, toastError } from '../ui.js';
+import { saveDialog, toast, toastError } from '../ui.js';
 import { html } from '../util.js';
 import { renderUsers } from './users.js';
 
@@ -164,29 +164,23 @@ async function changePassword() {
     const node = document.createElement('div');
     node.innerHTML = html`
         <label class="field"><span class="field__label">Bisheriges Passwort</span>
-            <input class="input" type="password" name="current" autocomplete="current-password"></label>
-        <label class="field"><span class="field__label">Neues Passwort (mind. 10 Zeichen)</span>
-            <input class="input" type="password" name="next" autocomplete="new-password"></label>`;
+            <input class="input" type="password" name="current_password" autocomplete="current-password"></label>
+        <label class="field"><span class="field__label">Neues Passwort</span>
+            <input class="input" type="password" name="new_password" autocomplete="new-password"
+                minlength="10" placeholder="mindestens 10 Zeichen">
+            <span class="field__hint">Mindestens 10 Zeichen.</span></label>`;
 
-    const result = await dialog({
+    const changed = await saveDialog({
         title: 'Passwort ändern',
         body: node,
-        buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Ändern', value: 'go', kind: 'primary' },
-        ],
+        saveLabel: 'Ändern',
+        save: () => api.post('/auth/password', {
+            current_password: node.querySelector('[name=current_password]').value,
+            new_password: node.querySelector('[name=new_password]').value,
+        }),
     });
-    if (result !== 'go') return;
 
-    try {
-        await api.post('/auth/password', {
-            current_password: node.querySelector('[name=current]').value,
-            new_password: node.querySelector('[name=next]').value,
-        });
-        toast('Passwort geändert.', 'ok', 3000);
-    } catch (error) {
-        toastError(error);
-    }
+    if (changed) toast('Passwort geändert.', 'ok', 3000);
 }
 
 async function runImport(root, dryRun) {

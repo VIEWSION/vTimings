@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree } from '../store.js';
-import { confirmDialog, dialog, toast, toastError } from '../ui.js';
+import { confirmDialog, dialog, saveDialog, toast, toastError } from '../ui.js';
 import { esc, html } from '../util.js';
 
 export async function renderUsers(host) {
@@ -123,7 +123,9 @@ async function editUser(host, user) {
             <input class="input" type="email" name="email" value="${user?.email ?? ''}"></label>
         <label class="field">
             <span class="field__label">Passwort${user ? ' (leer lassen = unverändert)' : ''}</span>
-            <input class="input" type="password" name="password" autocomplete="new-password"></label>
+            <input class="input" type="password" name="password" autocomplete="new-password"
+                minlength="10" placeholder="mindestens 10 Zeichen">
+            <span class="field__hint">Mindestens 10 Zeichen.</span></label>
         <label class="field"><span class="field__label">Rolle</span>
             <select class="input" name="role">
                 <option value="client" ${user?.role === 'admin' ? '' : 'selected'}>Kunde (nur lesen)</option>
@@ -169,38 +171,32 @@ async function editUser(host, user) {
     fillProjects();
     toggleRole();
 
-    const result = await dialog({
+    const saved = await saveDialog({
         title: user ? 'Zugang bearbeiten' : 'Zugang anlegen',
         body: node,
-        buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Speichern', value: 'save', kind: 'primary' },
-        ],
+        save: async () => {
+            const get = (name) => node.querySelector(`[name=${name}]`);
+            const payload = {
+                name: get('name').value.trim(),
+                email: get('email').value.trim(),
+                role: get('role').value,
+                active: get('active').checked,
+            };
+            if (get('password').value) payload.password = get('password').value;
+            if (payload.role === 'client') {
+                payload.client_id = Number(get('client_id').value);
+                payload.project_filter = [...projectSelect.selectedOptions].map((o) => Number(o.value));
+                payload.show_costs = get('show_costs').checked;
+            }
+
+            if (user) await api.patch(`/users/${user.id}`, payload);
+            else await api.post('/users', payload);
+        },
     });
-    if (result !== 'save') return;
+    if (!saved) return;
 
-    const get = (name) => node.querySelector(`[name=${name}]`);
-    const payload = {
-        name: get('name').value.trim(),
-        email: get('email').value.trim(),
-        role: get('role').value,
-        active: get('active').checked,
-    };
-    if (get('password').value) payload.password = get('password').value;
-    if (payload.role === 'client') {
-        payload.client_id = Number(get('client_id').value);
-        payload.project_filter = [...projectSelect.selectedOptions].map((o) => Number(o.value));
-        payload.show_costs = get('show_costs').checked;
-    }
-
-    try {
-        if (user) await api.patch(`/users/${user.id}`, payload);
-        else await api.post('/users', payload);
-        toast('Gespeichert.', 'ok', 2000);
-        await renderUsers(host);
-    } catch (error) {
-        toastError(error);
-    }
+    toast('Gespeichert.', 'ok', 2000);
+    await renderUsers(host);
 }
 
 async function createToken(host) {
@@ -211,32 +207,24 @@ async function createToken(host) {
         <label class="field"><span class="field__label">Gültig für (Tage, leer = unbegrenzt)</span>
             <input class="input" type="number" name="expires_days" min="1" max="3650"></label>`;
 
-    const result = await dialog({
+    const data = await saveDialog({
         title: 'API-Token erzeugen',
         body: node,
-        buttons: [
-            { label: 'Abbrechen', value: null },
-            { label: 'Erzeugen', value: 'go', kind: 'primary' },
-        ],
-    });
-    if (result !== 'go') return;
-
-    try {
-        const data = await api.post('/tokens', {
+        saveLabel: 'Erzeugen',
+        save: () => api.post('/tokens', {
             label: node.querySelector('[name=label]').value.trim() || 'Token',
             expires_days: node.querySelector('[name=expires_days]').value || undefined,
-        });
+        }),
+    });
+    if (!data) return;
 
-        await dialog({
-            title: 'Token erzeugt',
-            body: html`
-                <p>${data.hint}</p>
-                <pre><code>${data.token}</code></pre>`,
-            buttons: [{ label: 'Verstanden', value: 'ok', kind: 'primary' }],
-        });
+    await dialog({
+        title: 'Token erzeugt',
+        body: html`
+            <p>${data.hint}</p>
+            <pre><code>${data.token}</code></pre>`,
+        buttons: [{ label: 'Verstanden', value: 'ok', kind: 'primary' }],
+    });
 
-        await renderUsers(host);
-    } catch (error) {
-        toastError(error);
-    }
+    await renderUsers(host);
 }

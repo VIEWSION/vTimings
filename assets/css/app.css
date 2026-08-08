@@ -365,6 +365,20 @@ pre {
 .field__label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
 .field__hint { font-size: 0.78rem; color: var(--text-muted); }
 
+/* Fehler stehen am Feld, nicht nur als Meldung am Bildschirmrand. */
+.field__error {
+    font-size: 0.78rem;
+    font-weight: 550;
+    color: var(--danger);
+}
+.field:has(.field__error) .field__hint { display: none; }
+
+.input.is-invalid {
+    border-color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+.input.is-invalid:focus-visible { outline-color: var(--danger); }
+
 .input {
     font: inherit;
     color: var(--text);

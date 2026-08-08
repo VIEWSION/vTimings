@@ -3,17 +3,9 @@
 import { api } from '../api.js';
 import { state } from '../store.js';
 import { toastError } from '../ui.js';
-import { dayLabel, decimal, hhmm, html, money } from '../util.js';
+import { dayLabel, decimal, html, money, todayISO } from '../util.js';
 
-/** Vorgabe: die letzten 100 Tage. 0 bedeutet "ohne Datumsgrenzen". */
-const view = { days: 100, projectId: null, showEmpty: false };
-
-const RANGES = [
-    [30, '30 Tage'],
-    [100, '100 Tage'],
-    [365, '1 Jahr'],
-    [0, 'Gesamt'],
-];
+const filters = { from: '', to: '' };
 
 export const portalView = {
     title: 'Übersicht',
@@ -23,14 +15,14 @@ export const portalView = {
 
         try {
             const data = await api.get('/portal', {
-                days: view.days,
-                project_id: view.projectId ?? '',
+                ...filters,
                 client_id: state.user?.role === 'admin' ? previewClientId() : undefined,
             });
             draw(root, data);
         } catch (error) {
             toastError(error);
-            root.innerHTML = html`<div class="card"><p class="card__body">${error.message}</p></div>`;
+            root.innerHTML = html`
+                <div class="card"><p class="card__body">${error.message}</p></div>`;
         }
     },
 };
@@ -43,17 +35,6 @@ function previewClientId() {
 function draw(root, data) {
     const costs = data.can_see_costs;
     const withBudget = data.projects.filter((p) => p.progress);
-    const selected = data.projects.find((p) => p.id === data.selected_project) ?? null;
-
-    // Balkenlänge relativ zum stärksten Projekt im Zeitraum.
-    const maxMinutes = Math.max(1, ...data.projects.map((p) => p.period?.minutes ?? 0));
-
-    // Nach Aufwand sortiert; Projekte ohne Aufwand im Zeitraum sind
-    // eingeklappt, sonst besteht die Tabelle überwiegend aus Nullzeilen.
-    const sorted = [...data.projects].sort((a, b) =>
-        (b.period?.minutes ?? 0) - (a.period?.minutes ?? 0) || a.name.localeCompare(b.name, 'de'));
-    const active = sorted.filter((p) => (p.period?.minutes ?? 0) > 0 || p.id === data.selected_project);
-    const idle = sorted.filter((p) => !active.includes(p));
 
     root.innerHTML = html`
         <section class="stack">
@@ -63,40 +44,28 @@ function draw(root, data) {
                     <p class="muted">Stand ${new Date(data.generated_at).toLocaleString('de-DE')}</p>
                 </div>
                 <div class="portal__totals">
-                    <span class="portal__big">${data.period.totals.hhmm}</span>
-                    <span class="muted">${rangeLabel(data.period)}</span>
-                    ${costs && data.period.totals.amount !== undefined
-                        ? html`<span class="portal__amount">${money(data.period.totals.amount, data.client.currency)}</span>`
+                    <span class="portal__big">${data.lifetime.hhmm}</span>
+                    <span class="muted">${decimal(data.lifetime.decimal)} Stunden gesamt</span>
+                    ${costs && data.lifetime.amount !== undefined
+                        ? html`<span class="portal__amount">${money(data.lifetime.amount, data.client.currency)}</span>`
                         : ''}
-                    <span class="muted portal__lifetime">
-                        insgesamt ${data.lifetime.hhmm}${costs && data.lifetime.amount !== undefined
-                            ? ` · ${money(data.lifetime.amount, data.client.currency)}` : ''}
-                    </span>
                 </div>
             </header>
 
-            <div class="chips portal__ranges">
-                ${RANGES.map(([days, label]) => html`
-                    <button class="chip ${view.days === days ? 'is-active' : ''}" data-days="${days}">${label}</button>`)}
-            </div>
-
             ${withBudget.length ? html`
                 <section class="card">
-                    <header class="card__head">
-                        <h2>Projektfortschritt</h2>
-                        <span class="muted">gesamter Verbrauch</span>
-                    </header>
-                    <ul class="budgets">${withBudget.map(budgetRow)}</ul>
+                    <header class="card__head"><h2>Projektfortschritt</h2></header>
+                    <ul class="budgets">
+                        ${withBudget.map(budgetRow)}
+                    </ul>
                 </section>` : ''}
 
             <section class="card">
                 <header class="card__head">
                     <h2>Projekte</h2>
-                    ${selected
-                        ? html`<button class="btn btn--small" data-clear>Auswahl aufheben</button>`
-                        : html`<span class="badge">${data.projects.length}</span>`}
+                    <span class="badge">${data.projects.length}</span>
                 </header>
-                <table class="table table--stats table--clickable">
+                <table class="table table--stats">
                     <thead>
                         <tr>
                             <th>Projekt</th>
@@ -106,38 +75,47 @@ function draw(root, data) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${active.length
-                            ? active.map((project) => projectRow(project, maxMinutes, costs, data))
-                            : html`<tr><td colspan="4" class="muted">Im gewählten Zeitraum wurde nichts erfasst.</td></tr>`}
-                        ${view.showEmpty ? idle.map((project) => projectRow(project, maxMinutes, costs, data)) : ''}
+                        ${data.projects.map((project) => html`
+                            <tr>
+                                <td>
+                                    <span class="dot" style="background:${project.color || 'var(--border)'}"></span>
+                                    ${project.name}
+                                </td>
+                                <td class="num">${project.stats?.hhmm ?? '00:00'}</td>
+                                ${costs ? html`<td class="num">${money(project.stats?.amount ?? 0, data.client.currency)}</td>` : ''}
+                                <td class="num muted">${project.stats?.entries ?? 0}</td>
+                            </tr>`)}
                     </tbody>
                 </table>
-                ${idle.length ? html`
-                    <button class="btn btn--ghost btn--small table__more" data-toggle-empty>
-                        ${view.showEmpty
-                            ? 'Projekte ohne Aufwand ausblenden'
-                            : `${idle.length} weitere Projekte ohne Aufwand im Zeitraum`}
-                    </button>` : ''}
-                <p class="muted card__body table__hint">Projekt anklicken, um Verlauf und Leistungen darauf einzugrenzen.</p>
             </section>
 
             ${data.by_month.length ? html`
                 <section class="card">
-                    <header class="card__head">
-                        <h2>Verlauf</h2>
-                        ${selected ? html`<span class="badge">${selected.name}</span>` : ''}
-                    </header>
+                    <header class="card__head"><h2>Verlauf</h2></header>
                     ${sparkline(data.by_month)}
                 </section>` : ''}
 
             <section class="card">
                 <header class="card__head">
                     <h2>Letzte Leistungen</h2>
-                    <span class="badge">${data.entries_total} im Zeitraum</span>
+                    <span class="badge">${data.entries_total} gesamt</span>
                 </header>
-                ${data.entries.length ? html`
-                    <ul class="entrylist">${data.entries.map((entry) => entryRow(entry, costs, data))}</ul>`
-                    : '<p class="muted card__body">Im gewählten Zeitraum wurde nichts erfasst.</p>'}
+                <ul class="entrylist">
+                    ${data.entries.map((entry) => html`
+                        <li class="entry">
+                            <span class="dot" style="background:${entry.color || 'var(--border)'}"></span>
+                            <span class="entry__times">${dayLabel(entry.date)}</span>
+                            <span class="entry__main">
+                                <span class="entry__path">${entry.subproject_name}
+                                    <span class="muted"> · ${entry.project_name}</span></span>
+                                ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
+                            </span>
+                            <span class="entry__dur">${entry.hhmm}
+                                ${costs && entry.amount !== undefined
+                                    ? html`<span class="muted entry__amount">${money(entry.amount, data.client.currency)}</span>`
+                                    : ''}</span>
+                        </li>`)}
+                </ul>
             </section>
 
             <div class="portal__actions">
@@ -145,42 +123,13 @@ function draw(root, data) {
             </div>
         </section>`;
 
-    bind(root, data);
-}
-
-function projectRow(project, maxMinutes, costs, data) {
-    const period = project.period;
-    const minutes = period?.minutes ?? 0;
-    const active = project.id === data.selected_project;
-
-    return html`
-        <tr class="${active ? 'is-selected' : ''} ${minutes ? '' : 'is-empty'}" data-project="${project.id}">
-            <td>
-                <span class="statbar" style="--share:${(minutes / maxMinutes) * 100}%;
-                    --bar:${project.color || 'var(--accent)'}"></span>
-                ${project.name}
-            </td>
-            <td class="num">${period?.hhmm ?? '00:00'}</td>
-            ${costs ? html`<td class="num">${money(period?.amount ?? 0, data.client.currency)}</td>` : ''}
-            <td class="num muted">${period?.entries ?? 0}</td>
-        </tr>`;
-}
-
-function entryRow(entry, costs, data) {
-    return html`
-        <li class="entry">
-            <span class="dot" style="background:${entry.color || 'var(--border)'}"></span>
-            <span class="entry__times">${dayLabel(entry.date)}</span>
-            <span class="entry__main">
-                <span class="entry__path">${entry.subproject_name}
-                    <span class="muted"> · ${entry.project_name}</span></span>
-                ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
-            </span>
-            <span class="entry__dur">${entry.hhmm}
-                ${costs && entry.amount !== undefined
-                    ? html`<span class="muted entry__amount">${money(entry.amount, data.client.currency)}</span>`
-                    : ''}</span>
-        </li>`;
+    root.querySelector('#portal-print').addEventListener('click', () => {
+        window.open(api.url('/report', {
+            client_id: data.client.id,
+            costs: costs ? 1 : 0,
+            notes: 1,
+        }), '_blank', 'noopener');
+    });
 }
 
 function budgetRow(project) {
@@ -208,53 +157,6 @@ function budgetRow(project) {
         </li>`;
 }
 
-function rangeLabel(period) {
-    if (period.days === 0 || (!period.from && !period.to)) return 'Stunden gesamt';
-    if (period.days) return `Stunden in ${period.days} Tagen`;
-    return 'Stunden im Zeitraum';
-}
-
-// -- Verhalten --------------------------------------------------------------
-
-function bind(root, data) {
-    root.addEventListener('click', (event) => {
-        const range = event.target.closest('[data-days]');
-        if (range) {
-            view.days = Number(range.dataset.days);
-            return portalView.render(root);
-        }
-
-        if (event.target.closest('[data-clear]')) {
-            view.projectId = null;
-            return portalView.render(root);
-        }
-
-        if (event.target.closest('[data-toggle-empty]')) {
-            view.showEmpty = !view.showEmpty;
-            return portalView.render(root);
-        }
-
-        const row = event.target.closest('[data-project]');
-        if (row) {
-            const id = Number(row.dataset.project);
-            // Erneuter Klick auf dasselbe Projekt hebt die Auswahl auf.
-            view.projectId = view.projectId === id ? null : id;
-            return portalView.render(root);
-        }
-    });
-
-    root.querySelector('#portal-print').addEventListener('click', () => {
-        window.open(api.url('/report', {
-            client_id: data.client.id,
-            project_id: view.projectId ?? '',
-            from: data.period.from ?? '',
-            to: data.period.to ?? '',
-            costs: data.can_see_costs ? 1 : 0,
-            notes: 1,
-        }), '_blank', 'noopener');
-    });
-}
-
 /** Balkenverlauf über die Monate – ohne Bibliothek, reines CSS. */
 function sparkline(months) {
     const ordered = fillMonthGaps([...months].reverse());
@@ -263,7 +165,7 @@ function sparkline(months) {
     return html`
         <div class="spark">
             ${ordered.map((month) => html`
-                <div class="spark__col" title="${month.label}: ${hhmm(month.minutes)}">
+                <div class="spark__col" title="${month.label}: ${month.hhmm}">
                     <span class="spark__bar" style="height:${month.minutes ? Math.max(3, (month.minutes / max) * 100) : 1}%"></span>
                     <span class="spark__label">${month.key.slice(5)}<span class="spark__year">${month.key.slice(2, 4)}</span></span>
                 </div>`)}

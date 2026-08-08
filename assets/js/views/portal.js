@@ -49,7 +49,10 @@ function paint(root) {
     if (!data) return;
 
     const costs = data.can_see_costs;
-    const project = data.projects.find((p) => p.id === selected) ?? null;
+    // Auswahl und Klickbarkeit ergeben nur einen Sinn, wenn es überhaupt
+    // etwas zum Eingrenzen gibt.
+    const selectable = data.projects.length > 1;
+    const project = selectable ? data.projects.find((p) => p.id === selected) ?? null : null;
     const entries = project ? data.entries.filter((e) => e.project_id === project.id) : data.entries;
     const totals = project ? projectTotals(project, entries, costs) : data.totals;
     const withBudget = (project ? [project] : data.projects).filter((p) => p.progress);
@@ -82,7 +85,7 @@ function paint(root) {
                             ? html`<button class="btn btn--small" data-clear>Auswahl aufheben</button>`
                             : html`<span class="badge">${data.projects.length}</span>`}
                     </header>
-                    <table class="table table--stats table--clickable">
+                    <table class="table table--stats ${selectable ? 'table--clickable' : ''}">
                         <thead>
                             <tr>
                                 <th>Projekt</th>
@@ -91,11 +94,12 @@ function paint(root) {
                                 <th class="num">Einträge</th>
                             </tr>
                         </thead>
-                        <tbody>${data.projects.map((p) => projectRow(p, costs))}</tbody>
+                        <tbody>${data.projects.map((p) => projectRow(p, costs, selectable))}</tbody>
                     </table>
-                    <p class="muted card__body table__hint">
-                        Projekt anklicken, um Verlauf und Leistungen darauf einzugrenzen.
-                    </p>
+                    ${selectable ? html`
+                        <p class="muted card__body table__hint">
+                            Projekt anklicken, um Verlauf und Leistungen darauf einzugrenzen.
+                        </p>` : ''}
                 </section>
 
                 <section class="card">
@@ -140,12 +144,12 @@ function paint(root) {
     bindOnce(root, 'Portal', 'click', onClick);
 }
 
-function projectRow(project, costs) {
+function projectRow(project, costs, selectable) {
     const max = Math.max(1, ...data.projects.map((p) => p.minutes));
     const active = project.id === selected;
 
     return html`
-        <tr class="${active ? 'is-selected' : ''}" data-project="${project.id}">
+        <tr class="${active ? 'is-selected' : ''}" ${selectable ? { __raw: `data-project="${project.id}"` } : ''}>
             <td>
                 <span class="statbar" style="--share:${(project.minutes / max) * 100}%;
                     --bar:${project.color || 'var(--accent)'}"></span>
@@ -264,6 +268,10 @@ function formatDate(iso, weekday = false) {
 // -- Verhalten --------------------------------------------------------------
 
 function onClick(event) {
+    // Ohne mehrere Projekte gibt es weder das Attribut noch etwas zum
+    // Eingrenzen – die Prüfung ist hier nur zur Klarheit.
+    if (!data || data.projects.length <= 1) return;
+
     const root = event.currentTarget;
 
     if (event.target.closest('[data-clear]')) {

@@ -2,7 +2,7 @@
 
 import { api, ApiError } from '../api.js';
 import { state, loadTimers, loadRecent, invalidateTree } from '../store.js';
-import { dialog, pickSubproject, toast, toastError, confirmDialog } from '../ui.js';
+import { bindOnce, dialog, pickSubproject, toast, toastError, confirmDialog } from '../ui.js';
 import { clock, esc, hhmm, html, money, todayISO, dayLabel, localISO } from '../util.js';
 
 let ticker = null;
@@ -115,12 +115,8 @@ function drawRunning(root) {
 
 function bind(root) {
     // Die Ansicht baut sich nach jedem Stoppen neu auf, der Wirt bleibt aber
-    // derselbe. Ohne diese Sperre sammelt sich pro Durchlauf ein weiterer
-    // Handler an und jeder Klick löste die Aktion mehrfach aus.
-    if (root.dataset.timerBound === '1') return;
-    root.dataset.timerBound = '1';
-
-    root.addEventListener('click', async (event) => {
+    // derselbe – deshalb nur einmal binden.
+    bindOnce(root, 'Timer', 'click', async (event) => {
         const start = event.target.closest('[data-start]');
         if (start) return startTimer(root, Number(start.dataset.start));
 

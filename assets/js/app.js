@@ -18,6 +18,9 @@ const ADMIN_ROUTES = {
     '/auswertung': reportsView,
     '/stammdaten': masterView,
     '/einstellungen': settingsView,
+    // Nicht in der Navigation: Vorschau auf das Kundenportal, erreichbar über
+    // die Stammdaten ("Kundenansicht"). So sieht man, was der Kunde sieht.
+    '/uebersicht': portalView,
 };
 
 const CLIENT_ROUTES = {
@@ -181,7 +184,13 @@ async function route() {
     currentView?.destroy?.();
     currentView = view;
 
-    const host = app.querySelector('#view');
+    // Für jede Ansicht ein frischer Wirt. Damit sterben alle Listener der
+    // vorherigen Ansicht mit dem alten Element – sie können weder doppelt
+    // laufen noch in die nächste Ansicht hineinwirken.
+    const host = document.createElement('main');
+    host.className = 'main';
+    host.id = 'view';
+    app.querySelector('#view').replaceWith(host);
     host.innerHTML = '<div class="loading">Lade …</div>';
 
     try {

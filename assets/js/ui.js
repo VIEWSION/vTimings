@@ -3,6 +3,20 @@
 import { esc, html } from './util.js';
 import { flatSubprojects, loadTree } from './store.js';
 
+/**
+ * Hängt einen Handler genau einmal an ein Element.
+ *
+ * Ansichten, die sich selbst neu zeichnen, ersetzen zwar ihren Inhalt, nicht
+ * aber den Wirt. Ohne diese Sperre sammelt sich pro Durchlauf ein weiterer
+ * Handler an, und ein Klick löst die Aktion vervielfacht aus.
+ */
+export function bindOnce(root, key, type, handler) {
+    const flag = 'bound' + key;
+    if (root.dataset[flag] === '1') return;
+    root.dataset[flag] = '1';
+    root.addEventListener(type, handler);
+}
+
 // -- Meldungen --------------------------------------------------------------
 
 export function toast(message, kind = 'info', timeout = 4000) {

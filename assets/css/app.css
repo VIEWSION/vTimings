@@ -548,7 +548,21 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 .portal__totals .muted { font-size: 0.8rem; }
 .portal__amount { margin-top: 0.35rem; font-weight: 650; font-variant-numeric: tabular-nums; }
 
+.portal__lifetime { margin-top: 0.4rem; font-size: 0.78rem; }
 .portal__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Anklickbare Zeilen (Projektauswahl im Portal) */
+.table--clickable tbody tr {
+    cursor: pointer;
+    /* Ein Klick soll auswählen, nicht Text markieren. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+.table--clickable tbody tr.is-selected {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.table--clickable tbody tr.is-selected td:first-child { font-weight: 650; }
+.table__hint { padding-top: 0.6rem; font-size: 0.8rem; }
 
 .budgets { list-style: none; margin: 0; padding: 0; }
 .budgets__item { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); }
@@ -567,40 +581,42 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 
 .progress--big { height: 8px; }
 
-/* Monatsverlauf – reine CSS-Balken, keine Bibliothek. */
-.spark {
+/* Tagesverlauf: ein Balken je Kalendertag, nach Projekten segmentiert.
+   Alle Tage teilen sich die Breite, damit der Zeitraum ohne Scrollen
+   vollständig sichtbar bleibt. */
+.daychart {
     display: flex;
     align-items: flex-end;
-    gap: 2px;
-    height: 8rem;
+    gap: 1px;
+    height: 9rem;
     padding: 1rem;
-    overflow-x: auto;
 }
-.spark__col {
-    flex: 1 0 1.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
+
+.daychart__col {
+    flex: 1 1 0;
+    min-width: 0;
     height: 100%;
-    gap: 0.3rem;
+    display: flex;
+    align-items: flex-end;
+    /* Auch leere Tage bleiben anfassbar – der Tooltip soll überall greifen. */
+    background: linear-gradient(var(--border), var(--border)) bottom / 100% 1px no-repeat;
 }
-.spark__bar {
-    display: block;
+.daychart__col:hover { background-color: color-mix(in srgb, var(--text) 6%, transparent); }
+
+.daychart__stack {
+    display: flex;
+    flex-direction: column-reverse;
     width: 100%;
-    max-width: 2.5rem;
-    background: var(--accent);
-    border-radius: 3px 3px 0 0;
-    opacity: 0.85;
+    min-height: 0;
+    border-radius: 1px 1px 0 0;
+    overflow: hidden;
 }
-.spark__col:hover .spark__bar { opacity: 1; }
-.spark__label {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+
+.daychart__seg { display: block; width: 100%; }
+
+@media (max-width: 700px) {
+    .daychart { height: 7rem; padding: 0.75rem 0.5rem; gap: 0; }
 }
-.spark__year::before { content: "/"; }
 
 tr.is-inactive { opacity: 0.5; }
 

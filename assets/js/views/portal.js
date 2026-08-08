@@ -1,11 +1,18 @@
-// Kundenportal: Fortschritt, Verlauf, Leistungsübersicht – nur lesend.
+// Kundenportal: die letzten 100 Tage – Projekte, Tagesverlauf, Leistungen.
+//
+// Die Antwort der API enthält bereits die Tageswerte je Projekt. Das
+// Umschalten auf ein einzelnes Projekt zeichnet deshalb nur neu und holt
+// nichts nach.
 
 import { api } from '../api.js';
 import { state } from '../store.js';
-import { toastError } from '../ui.js';
-import { dayLabel, decimal, html, money, todayISO } from '../util.js';
+import { bindOnce, toastError } from '../ui.js';
+import { dayLabel, decimal, hhmm, html, money } from '../util.js';
 
-const filters = { from: '', to: '' };
+const ENTRY_LIMIT = 25;
+
+let data = null;
+let selected = null;
 
 export const portalView = {
     title: 'Übersicht',
@@ -14,16 +21,20 @@ export const portalView = {
         root.innerHTML = '<div class="loading">Lade …</div>';
 
         try {
-            const data = await api.get('/portal', {
-                ...filters,
+            data = await api.get('/portal', {
                 client_id: state.user?.role === 'admin' ? previewClientId() : undefined,
             });
-            draw(root, data);
+            selected = null;
+            paint(root);
         } catch (error) {
             toastError(error);
-            root.innerHTML = html`
-                <div class="card"><p class="card__body">${error.message}</p></div>`;
+            root.innerHTML = html`<div class="card"><p class="card__body">${error.message}</p></div>`;
         }
+    },
+
+    destroy() {
+        data = null;
+        selected = null;
     },
 };
 
@@ -32,104 +43,180 @@ function previewClientId() {
     return params.get('client_id') || undefined;
 }
 
-function draw(root, data) {
+// -- Darstellung ------------------------------------------------------------
+
+function paint(root) {
+    if (!data) return;
+
     const costs = data.can_see_costs;
-    const withBudget = data.projects.filter((p) => p.progress);
+    const project = data.projects.find((p) => p.id === selected) ?? null;
+    const entries = project ? data.entries.filter((e) => e.project_id === project.id) : data.entries;
+    const totals = project ? projectTotals(project, entries, costs) : data.totals;
+    const withBudget = (project ? [project] : data.projects).filter((p) => p.progress);
 
     root.innerHTML = html`
         <section class="stack">
             <header class="portal__head card">
                 <div>
                     <h1>${data.client.name}</h1>
-                    <p class="muted">Stand ${new Date(data.generated_at).toLocaleString('de-DE')}</p>
+                    <p class="muted">
+                        ${formatDate(data.period.from)} – ${formatDate(data.period.to)}
+                        · Stand ${new Date(data.generated_at).toLocaleString('de-DE')}
+                    </p>
                 </div>
                 <div class="portal__totals">
-                    <span class="portal__big">${data.lifetime.hhmm}</span>
-                    <span class="muted">${decimal(data.lifetime.decimal)} Stunden gesamt</span>
-                    ${costs && data.lifetime.amount !== undefined
-                        ? html`<span class="portal__amount">${money(data.lifetime.amount, data.client.currency)}</span>`
+                    <span class="portal__big">${totals.hhmm}</span>
+                    <span class="muted">${decimal(totals.decimal)} Stunden in ${data.period.days} Tagen</span>
+                    ${costs && totals.amount !== undefined
+                        ? html`<span class="portal__amount">${money(totals.amount, data.client.currency)}</span>`
                         : ''}
+                    <span class="muted portal__lifetime">insgesamt ${data.lifetime.hhmm}</span>
                 </div>
             </header>
 
-            ${withBudget.length ? html`
+            ${data.projects.length ? html`
                 <section class="card">
-                    <header class="card__head"><h2>Projektfortschritt</h2></header>
-                    <ul class="budgets">
-                        ${withBudget.map(budgetRow)}
-                    </ul>
-                </section>` : ''}
-
-            <section class="card">
-                <header class="card__head">
-                    <h2>Projekte</h2>
-                    <span class="badge">${data.projects.length}</span>
-                </header>
-                <table class="table table--stats">
-                    <thead>
-                        <tr>
-                            <th>Projekt</th>
-                            <th class="num">Stunden</th>
-                            ${costs ? html`<th class="num">Betrag</th>` : ''}
-                            <th class="num">Einträge</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.projects.map((project) => html`
+                    <header class="card__head">
+                        <h2>Projekte</h2>
+                        ${project
+                            ? html`<button class="btn btn--small" data-clear>Auswahl aufheben</button>`
+                            : html`<span class="badge">${data.projects.length}</span>`}
+                    </header>
+                    <table class="table table--stats table--clickable">
+                        <thead>
                             <tr>
-                                <td>
-                                    <span class="dot" style="background:${project.color || 'var(--border)'}"></span>
-                                    ${project.name}
-                                </td>
-                                <td class="num">${project.stats?.hhmm ?? '00:00'}</td>
-                                ${costs ? html`<td class="num">${money(project.stats?.amount ?? 0, data.client.currency)}</td>` : ''}
-                                <td class="num muted">${project.stats?.entries ?? 0}</td>
-                            </tr>`)}
-                    </tbody>
-                </table>
-            </section>
+                                <th>Projekt</th>
+                                <th class="num">Stunden</th>
+                                ${costs ? html`<th class="num">Betrag</th>` : ''}
+                                <th class="num">Einträge</th>
+                            </tr>
+                        </thead>
+                        <tbody>${data.projects.map((p) => projectRow(p, costs))}</tbody>
+                    </table>
+                    <p class="muted card__body table__hint">
+                        Projekt anklicken, um Verlauf und Leistungen darauf einzugrenzen.
+                    </p>
+                </section>
 
-            ${data.by_month.length ? html`
                 <section class="card">
-                    <header class="card__head"><h2>Verlauf</h2></header>
-                    ${sparkline(data.by_month)}
-                </section>` : ''}
+                    <header class="card__head">
+                        <h2>Verlauf</h2>
+                        ${project ? html`<span class="badge">${project.name}</span>` : ''}
+                    </header>
+                    ${dailyChart(project)}
+                </section>
 
-            <section class="card">
-                <header class="card__head">
-                    <h2>Letzte Leistungen</h2>
-                    <span class="badge">${data.entries_total} gesamt</span>
-                </header>
-                <ul class="entrylist">
-                    ${data.entries.map((entry) => html`
-                        <li class="entry">
-                            <span class="dot" style="background:${entry.color || 'var(--border)'}"></span>
-                            <span class="entry__times">${dayLabel(entry.date)}</span>
-                            <span class="entry__main">
-                                <span class="entry__path">${entry.subproject_name}
-                                    <span class="muted"> · ${entry.project_name}</span></span>
-                                ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
-                            </span>
-                            <span class="entry__dur">${entry.hhmm}
-                                ${costs && entry.amount !== undefined
-                                    ? html`<span class="muted entry__amount">${money(entry.amount, data.client.currency)}</span>`
-                                    : ''}</span>
-                        </li>`)}
-                </ul>
-            </section>
+                ${withBudget.length ? html`
+                    <section class="card">
+                        <header class="card__head">
+                            <h2>Projektfortschritt</h2>
+                            <span class="muted">gesamter Verbrauch</span>
+                        </header>
+                        <ul class="budgets">${withBudget.map(budgetRow)}</ul>
+                    </section>` : ''}
 
-            <div class="portal__actions">
-                <button class="btn" id="portal-print">Leistungsnachweis öffnen</button>
-            </div>
+                <section class="card">
+                    <header class="card__head">
+                        <h2>Letzte Leistungen</h2>
+                        <span class="badge">${entries.length} im Zeitraum</span>
+                    </header>
+                    <ul class="entrylist">
+                        ${entries.slice(0, ENTRY_LIMIT).map((entry) => entryRow(entry, costs))}
+                    </ul>
+                    ${entries.length > ENTRY_LIMIT ? html`
+                        <p class="muted card__body table__hint">
+                            Zeigt die ${ENTRY_LIMIT} jüngsten von ${entries.length} Einträgen.
+                            Die vollständige Liste steht unter „Leistungen“.
+                        </p>` : ''}
+                </section>`
+            : html`
+                <div class="card">
+                    <p class="card__body muted">
+                        In den letzten ${data.period.days} Tagen wurde nichts erfasst.
+                    </p>
+                </div>`}
         </section>`;
 
-    root.querySelector('#portal-print').addEventListener('click', () => {
-        window.open(api.url('/report', {
-            client_id: data.client.id,
-            costs: costs ? 1 : 0,
-            notes: 1,
-        }), '_blank', 'noopener');
-    });
+    bindOnce(root, 'Portal', 'click', onClick);
+}
+
+function projectRow(project, costs) {
+    const max = Math.max(1, ...data.projects.map((p) => p.minutes));
+    const active = project.id === selected;
+
+    return html`
+        <tr class="${active ? 'is-selected' : ''}" data-project="${project.id}">
+            <td>
+                <span class="statbar" style="--share:${(project.minutes / max) * 100}%;
+                    --bar:${project.color || 'var(--accent)'}"></span>
+                ${project.name}
+            </td>
+            <td class="num">${project.hhmm}</td>
+            ${costs ? html`<td class="num">${money(project.amount ?? 0, data.client.currency)}</td>` : ''}
+            <td class="num muted">${project.entries}</td>
+        </tr>`;
+}
+
+/**
+ * Ein Balken je Kalendertag, in der Höhe nach Projekten segmentiert.
+ *
+ * Alle Tage teilen sich die verfügbare Breite, damit der ganze Zeitraum
+ * ohne Scrollen sichtbar bleibt. Beschriftet wird nichts – das Datum steht
+ * im title-Attribut.
+ */
+function dailyChart(project) {
+    const days = data.days;
+    const minutesOf = (day) => (project ? (day.projects[project.id] ?? 0) : day.minutes);
+
+    // Maßstab am dargestellten Ausschnitt, sonst verschwindet ein kleines
+    // Projekt neben dem größten Tag des Gesamtzeitraums.
+    const max = Math.max(1, ...days.map(minutesOf));
+
+    return html`
+        <div class="daychart" style="--rows:${max}">
+            ${days.map((day) => {
+                const minutes = minutesOf(day);
+                const segments = project
+                    ? (minutes ? [[project.id, minutes]] : [])
+                    : Object.entries(day.projects);
+
+                return html`
+                    <div class="daychart__col" title="${dayTitle(day, minutes)}">
+                        <span class="daychart__stack" style="height:${(minutes / max) * 100}%">
+                            ${segments.map(([id, mins]) => html`
+                                <span class="daychart__seg"
+                                      style="height:${(mins / (minutes || 1)) * 100}%;
+                                             background:${colorOf(Number(id))}"></span>`)}
+                        </span>
+                    </div>`;
+            })}
+        </div>`;
+}
+
+function dayTitle(day, minutes) {
+    const date = formatDate(day.date, true);
+    return minutes ? `${date} · ${hhmm(minutes)}` : date;
+}
+
+function colorOf(projectId) {
+    return data.projects.find((p) => p.id === projectId)?.color || 'var(--accent)';
+}
+
+function entryRow(entry, costs) {
+    return html`
+        <li class="entry">
+            <span class="dot" style="background:${colorOf(entry.project_id)}"></span>
+            <span class="entry__times">${dayLabel(entry.date)}</span>
+            <span class="entry__main">
+                <span class="entry__path">${entry.subproject_name}
+                    <span class="muted"> · ${entry.project_name}</span></span>
+                ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
+            </span>
+            <span class="entry__dur">${entry.hhmm}
+                ${costs && entry.amount !== undefined
+                    ? html`<span class="muted entry__amount">${money(entry.amount, data.client.currency)}</span>`
+                    : ''}</span>
+        </li>`;
 }
 
 function budgetRow(project) {
@@ -141,8 +228,7 @@ function budgetRow(project) {
             <div class="budgets__head">
                 <strong>${project.name}</strong>
                 <span class="${over ? 'is-over' : 'muted'}">
-                    ${decimal(p.used_hours)} / ${decimal(p.budget_hours)} h
-                    (${decimal(p.percent)} %)
+                    ${decimal(p.used_hours)} / ${decimal(p.budget_hours)} h (${decimal(p.percent)} %)
                 </span>
             </div>
             <span class="progress progress--big">
@@ -157,42 +243,39 @@ function budgetRow(project) {
         </li>`;
 }
 
-/** Balkenverlauf über die Monate – ohne Bibliothek, reines CSS. */
-function sparkline(months) {
-    const ordered = fillMonthGaps([...months].reverse());
-    const max = Math.max(...ordered.map((m) => m.minutes)) || 1;
-
-    return html`
-        <div class="spark">
-            ${ordered.map((month) => html`
-                <div class="spark__col" title="${month.label}: ${month.hhmm}">
-                    <span class="spark__bar" style="height:${month.minutes ? Math.max(3, (month.minutes / max) * 100) : 1}%"></span>
-                    <span class="spark__label">${month.key.slice(5)}<span class="spark__year">${month.key.slice(2, 4)}</span></span>
-                </div>`)}
-        </div>`;
+function projectTotals(project, entries, costs) {
+    const out = {
+        minutes: project.minutes,
+        hhmm: project.hhmm,
+        decimal: project.decimal,
+        entries: entries.length,
+    };
+    if (costs) out.amount = project.amount ?? 0;
+    return out;
 }
 
-/**
- * Monate ohne Buchung ergänzen. Ohne das stünden drei weit auseinander
- * liegende Monate nebeneinander und der Verlauf läse sich wie eine
- * durchgehende Reihe.
- */
-function fillMonthGaps(months) {
-    if (months.length < 2) return months;
+function formatDate(iso, weekday = false) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('de-DE',
+        weekday ? { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }
+                : { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
-    const out = [];
-    const [startY, startM] = months[0].key.split('-').map(Number);
-    const last = months[months.length - 1].key;
-    const known = new Map(months.map((m) => [m.key, m]));
+// -- Verhalten --------------------------------------------------------------
 
-    let year = startY;
-    let month = startM;
-    // Sicherheitsgrenze: mehr als 10 Jahre Lücke zeichnen wir nicht aus.
-    for (let i = 0; i < 120; i++) {
-        const key = `${year}-${String(month).padStart(2, '0')}`;
-        out.push(known.get(key) ?? { key, label: key, minutes: 0, hhmm: '00:00' });
-        if (key === last) break;
-        month = month === 12 ? (year++, 1) : month + 1;
+function onClick(event) {
+    const root = event.currentTarget;
+
+    if (event.target.closest('[data-clear]')) {
+        selected = null;
+        return paint(root);
     }
-    return out;
+
+    const row = event.target.closest('[data-project]');
+    if (!row) return;
+
+    const id = Number(row.dataset.project);
+    // Erneuter Klick auf dasselbe Projekt hebt die Auswahl auf.
+    selected = selected === id ? null : id;
+    paint(root);
 }

@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree } from '../store.js';
-import { toastError } from '../ui.js';
+import { bindOnce, toastError } from '../ui.js';
 import { decimal, esc, html, money, todayISO } from '../util.js';
 
 const filters = {
@@ -190,7 +190,7 @@ function bind(root) {
         }), '_blank', 'noopener');
     });
 
-    root.addEventListener('click', (event) => {
+    bindOnce(root, 'Reports', 'click', (event) => {
         const button = event.target.closest('[data-export]');
         if (!button) return;
         window.location.href = api.url('/api/export', {

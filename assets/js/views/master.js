@@ -3,7 +3,7 @@
 
 import { api } from '../api.js';
 import { state, loadTree, invalidateTree } from '../store.js';
-import { confirmDialog, saveDialog, toast, toastError } from '../ui.js';
+import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
 import { esc, hhmm, html, money } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
@@ -116,6 +116,8 @@ function drawProjects(root) {
         ${{ __raw: columnHead(client.name, 'Kunden', 'Projekt anlegen', 'data-add-project') }}
         <div class="column__tools">
             <button class="btn btn--ghost btn--small" data-edit-client="${client.id}">Kunde bearbeiten</button>
+            <a class="btn btn--ghost btn--small" href="#/uebersicht?client_id=${client.id}"
+               title="So sieht der Kunde sein Portal">Kundenansicht</a>
             <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">Löschen</button>
         </div>
         <ul class="rows">
@@ -195,7 +197,8 @@ function bind(root) {
         await masterView.render(root);
     });
 
-    root.addEventListener('click', async (event) => {
+    // Die Ansicht baut sich nach jedem Speichern neu auf, der Wirt bleibt.
+    bindOnce(root, 'Master', 'click', async (event) => {
         const target = (attr) => event.target.closest(`[data-${attr}]`);
 
         if (target('back')) {

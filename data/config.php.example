@@ -1,0 +1,31 @@
+<?php
+/**
+ * Vorlage für data/config.php.
+ *
+ * Kopieren, umbenennen und anpassen. Die Datei liegt bewusst in data/
+ * (per .htaccess gesperrt) und gehört nicht ins Versionsverwaltungssystem.
+ */
+return [
+    // Anzeige-Zeitzone. Gespeichert wird immer in UTC.
+    'timezone' => 'Europe/Berlin',
+
+    // Nur für die Fehlersuche: legt Details in die API-Antworten.
+    // Auf öffentlichen Servern immer false.
+    'debug' => false,
+
+    // true, wenn ein Reverse-Proxy (nginx, Cloudflare) davorsteht. Erst dann
+    // werden X-Forwarded-For und X-Forwarded-Proto ausgewertet – ohne Proxy
+    // wäre das eine Einladung, die IP-Sperre zu umgehen.
+    'trusted_proxy' => false,
+
+    // null = aus dem Request ableiten. Nur setzen, wenn die automatische
+    // Erkennung hinter einem Proxy danebenliegt, z. B. '/zeiterfassung'.
+    'base_path' => null,
+
+    // Sitzungsdauer in Sekunden (Vorgabe: 30 Tage).
+    'session_lifetime' => 60 * 60 * 24 * 30,
+
+    // Abweichender Ort der Datenbank, z. B. außerhalb des Webroots.
+    // null = data/vtimings.sqlite
+    'db_file' => null,
+];

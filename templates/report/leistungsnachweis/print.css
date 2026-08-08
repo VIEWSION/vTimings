@@ -1,0 +1,199 @@
+/* Leistungsnachweis – Bildschirm und Druck.
+   Maßgeblich ist der Druck; am Bildschirm wird das Blatt nur simuliert. */
+
+@page {
+    size: A4;
+    margin: 18mm 16mm 20mm;
+}
+
+:root {
+    --ink: #16161a;
+    --ink-soft: #55555f;
+    --rule: #d8d8de;
+    --rule-strong: #16161a;
+    --accent: #2f6df6;
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: 10.5pt; }
+
+body {
+    margin: 0;
+    padding: 0;
+    background: #e9e9ee;
+    color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.sheet {
+    background: #fff;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 12mm auto;
+    padding: 18mm 16mm 20mm;
+    box-shadow: 0 2px 14px rgb(0 0 0 / 12%);
+}
+
+/* -- Kopf ----------------------------------------------------------------- */
+
+.head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12mm;
+    padding-bottom: 4mm;
+    border-bottom: 2px solid var(--rule-strong);
+}
+
+.head__logo img { max-height: 18mm; max-width: 60mm; }
+.head__logo-text { font-size: 15pt; font-weight: 700; letter-spacing: -0.01em; }
+
+.head__issuer {
+    text-align: right;
+    font-size: 8.5pt;
+    color: var(--ink-soft);
+    white-space: pre-line;
+}
+
+.title {
+    margin: 8mm 0 0;
+    font-size: 17pt;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+}
+
+/* Ohne Briefkopf beginnt der Titel oben, statt Leerraum stehen zu lassen. */
+.title--top {
+    margin-top: 0;
+    padding-bottom: 3mm;
+    border-bottom: 2px solid var(--rule-strong);
+}
+
+/* -- Kopfdaten ------------------------------------------------------------ */
+
+.meta {
+    display: grid;
+    grid-template-columns: max-content 1fr max-content 1fr;
+    gap: 1.5mm 4mm;
+    margin: 5mm 0 8mm;
+    font-size: 9.5pt;
+}
+
+.meta dt { color: var(--ink-soft); }
+.meta dd { margin: 0; font-weight: 600; }
+
+/* -- Positionen ----------------------------------------------------------- */
+
+.listing__label {
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    margin: 0 0 2mm;
+}
+
+.items { width: 100%; border-collapse: collapse; }
+
+.items thead th {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    text-align: left;
+    font-weight: 600;
+    padding: 0 2mm 1.5mm 0;
+    border-bottom: 1px solid var(--rule-strong);
+}
+
+.items tbody td {
+    padding: 2mm 2mm 2mm 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+}
+
+.items tbody tr:last-child td { border-bottom: 0; }
+
+/* Eine Position darf nicht über den Seitenumbruch zerrissen werden. */
+.items tr { break-inside: avoid; page-break-inside: avoid; }
+.items thead { display: table-header-group; }
+
+.col-date { width: 22mm; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.col-time { width: 24mm; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.col-dur  { width: 18mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.col-rate { width: 20mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.col-sum  { width: 24mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.overnight { font-size: 7pt; margin-left: 0.5mm; }
+
+.item__title { font-weight: 600; }
+.item__note { margin: 0.5mm 0 0; white-space: pre-line; color: var(--ink-soft); font-size: 9.5pt; }
+.item__count { font-size: 8pt; color: var(--ink-soft); }
+
+/* -- Summe ---------------------------------------------------------------- */
+
+.totals {
+    margin-top: 6mm;
+    padding-top: 3mm;
+    border-top: 2px solid var(--rule-strong);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8mm;
+    break-inside: avoid;
+}
+
+.totals__label { font-size: 12pt; font-weight: 700; }
+.totals__values { text-align: right; }
+.totals__hours { font-size: 12pt; font-weight: 700; font-variant-numeric: tabular-nums; }
+.totals__amount { font-size: 14pt; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1mm; }
+.totals__hint { font-size: 8.5pt; color: var(--ink-soft); }
+
+.footer {
+    margin-top: 10mm;
+    padding-top: 3mm;
+    border-top: 1px solid var(--rule);
+    font-size: 8pt;
+    color: var(--ink-soft);
+    display: flex;
+    justify-content: space-between;
+    gap: 6mm;
+    white-space: pre-line;
+}
+
+/* -- Bedienleiste (nur Bildschirm) ---------------------------------------- */
+
+.toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 16px;
+    background: #16161a;
+    color: #fff;
+    font-size: 13px;
+}
+
+.toolbar button {
+    font: inherit;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid #4a4a55;
+    background: #26262e;
+    color: #fff;
+    cursor: pointer;
+}
+.toolbar button.primary { background: var(--accent); border-color: var(--accent); }
+.toolbar .spacer { flex: 1; }
+
+@media print {
+    body { background: #fff; }
+    .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    .toolbar { display: none; }
+}

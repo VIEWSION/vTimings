@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vTimings">
+    <rect width="512" height="512" rx="112" fill="#2f6df6"/>
+    <circle cx="256" cy="272" r="150" fill="none" stroke="#ffffff" stroke-width="30"/>
+    <path d="M256 180v92l62 46" fill="none" stroke="#ffffff" stroke-width="30"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="212" y="86" width="88" height="34" rx="17" fill="#ffffff"/>
+</svg>

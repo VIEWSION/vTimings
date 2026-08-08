@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+._*
+
+# Laufzeitdaten: Datenbank, Logs, Sicherungen und die lokale Konfiguration.
+# Der Verzeichnisschutz und die Konfigurationsvorlage gehören dagegen zum
+# Deploy und bleiben versioniert.
+data/*
+!data/.htaccess
+!data/config.php.example
+
+# Originaldaten aus der alten App: der CSV-Export enthält 21 Jahre echte
+# Kundendaten, das PDF eine echte Kundenrechnung, die Screenshots Umsätze –
+# und Timings.app ist fremde, kommerzielle Software. Nichts davon gehört in
+# ein Code-Repository, auch nicht in ein privates: was einmal in der Historie
+# steht, bekommt man kaum wieder heraus.
+Vorlagen/
+
+# Editor und Werkzeuge
+.idea/
+.vscode/
+*.swp

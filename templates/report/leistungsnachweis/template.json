@@ -1,0 +1,5 @@
+{
+    "label": "Leistungsnachweis (Standard)",
+    "description": "Aufstellung nach Datum mit Beschreibung – das gewohnte Layout, aufgeräumt.",
+    "supports": ["costs", "group_days", "times", "notes", "logo", "lang"]
+}

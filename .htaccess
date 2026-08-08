@@ -1,0 +1,54 @@
+DirectoryIndex index.php
+
+# ---------------------------------------------------------------------------
+# Sensible Verzeichnisse komplett sperren
+# ---------------------------------------------------------------------------
+RedirectMatch 404 ^/vTimings/(data|src|migrations|bin|Vorlagen)(/|$)
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /vTimings/
+
+    # HTTPS erzwingen (localhost ausgenommen)
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP_HOST} !^localhost [NC]
+    RewriteCond %{HTTP_HOST} !^127\.0\.0\.1
+    RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+    # API
+    RewriteRule ^api/(.*)$ api.php [QSA,L]
+
+    # Druckansichten laufen über denselben Front-Controller, liefern aber HTML
+    RewriteRule ^report$ api.php [QSA,L]
+
+    # Alles was keine echte Datei ist, geht an das Frontend
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    # ES-Module werden untereinander ohne Versionsparameter geladen. Damit nach
+    # einem Deploy nicht einzelne Module veraltet hängenbleiben, muss der Browser
+    # sie revalidieren – dank ETag kostet das nur ein 304.
+    <FilesMatch "\.(js|css|webmanifest)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+
+    # Der Service Worker liegt unter /assets/, soll aber die ganze App
+    # bedienen. Ohne diesen Header lehnt der Browser den Scope ab.
+    <Files "sw.js">
+        Header set Service-Worker-Allowed "/"
+    </Files>
+
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "same-origin"
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+</IfModule>
+
+# Verstecktes und Backup-Zeug nie ausliefern
+<FilesMatch "^\.|\.(sqlite|sqlite-wal|sqlite-shm|db|log|md|dist|bak)$">
+    Require all denied
+</FilesMatch>

@@ -136,7 +136,22 @@ const STRINGS = {
         'entries.rateInherits': 'erbt',
         'entries.billable': 'abrechenbar',
         'entries.round': 'auf Raster runden',
+        'entries.stepUp': '{minutes} Minuten später',
+        'entries.stepDown': '{minutes} Minuten früher',
         'entries.overlapHint': 'Hinweis: überschneidet sich mit {count} anderen Eintrag/Einträgen.',
+
+        // -- Kalenderdarstellung der Einträge -------------------------------
+        'cal.display': 'Darstellung',
+        'cal.viewList': 'Liste',
+        'cal.viewCalendar': 'Kalender',
+        'cal.scaleDay': 'Tag',
+        'cal.scaleWeek': 'Woche',
+        'cal.scaleMonth': 'Monat',
+        'cal.today': 'Heute',
+        'cal.prev': 'Zurück',
+        'cal.next': 'Weiter',
+        'cal.now': 'Jetzt',
+        'cal.more': '+{count} weitere',
 
         // -- Auswertung -----------------------------------------------------
         'reports.groupBy': 'Gruppieren nach',
@@ -422,7 +437,22 @@ const STRINGS = {
         'entries.rateInherits': 'inherited',
         'entries.billable': 'billable',
         'entries.round': 'round to grid',
+        'entries.stepUp': '{minutes} minutes later',
+        'entries.stepDown': '{minutes} minutes earlier',
         'entries.overlapHint': 'Note: overlaps with {count} other entry/entries.',
+
+        // -- Kalenderdarstellung der Einträge -------------------------------
+        'cal.display': 'Display',
+        'cal.viewList': 'List',
+        'cal.viewCalendar': 'Calendar',
+        'cal.scaleDay': 'Day',
+        'cal.scaleWeek': 'Week',
+        'cal.scaleMonth': 'Month',
+        'cal.today': 'Today',
+        'cal.prev': 'Previous',
+        'cal.next': 'Next',
+        'cal.now': 'Now',
+        'cal.more': '+{count} more',
 
         // -- Auswertung -----------------------------------------------------
         'reports.groupBy': 'Group by',

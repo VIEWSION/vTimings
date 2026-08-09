@@ -21,6 +21,7 @@ const SHELL = [
     BASE + 'assets/js/util.js',
     BASE + 'assets/js/views/timer.js',
     BASE + 'assets/js/views/entries.js',
+    BASE + 'assets/js/views/calendar.js',
     BASE + 'assets/js/views/reports.js',
     BASE + 'assets/js/views/master.js',
     BASE + 'assets/js/views/settings.js',

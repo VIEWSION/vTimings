@@ -1,11 +1,15 @@
 // Einträge: Filter, Tagesgruppen, Bearbeiten, Papierkorb.
 
 import { api } from '../api.js';
-import { state, loadTree, invalidateTree, flatSubprojects } from '../store.js';
+import { state, loadTree, loadSettings, invalidateTree, flatSubprojects } from '../store.js';
 import { t } from '../i18n.js';
 import { confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
-    dateTimeToISO, dayLabel, debounce, esc, html, money, shiftDays, startOfMonth, todayISO,
+    calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
+} from './calendar.js';
+import {
+    dateTimeToISO, dayLabel, debounce, esc, hhmm, html, minutesToTime, money, shiftDays,
+    startOfMonth, startOfWeek, timeToMinutes, todayISO,
 } from '../util.js';
 
 const filters = {
@@ -20,6 +24,32 @@ const filters = {
 };
 
 let initialized = false;
+
+// Darstellung: Liste oder Kalender. Im Kalender geben Maßstab und Ankertag
+// den Zeitraum vor – die Datumsfelder des Filters werden dann von der
+// Navigation gefüllt statt von Hand. Der Ankertag ist immer ein konkreter
+// Tag, auch im Monatsraster.
+const VIEW_KEY = 'vt.entriesView';
+
+const stored = readView();
+let mode = stored.mode === 'calendar' ? 'calendar' : 'list';
+let scale = SCALES.includes(stored.scale) ? stored.scale : 'week';
+let anchor = todayISO();
+
+/** Darstellung und Maßstab überdauern die Sitzung – wie die Sprache. */
+function readView() {
+    try {
+        return JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
+    } catch {
+        return {}; // Privater Modus oder kaputter Eintrag: dann eben Liste.
+    }
+}
+
+function storeView() {
+    try {
+        localStorage.setItem(VIEW_KEY, JSON.stringify({ mode, scale }));
+    } catch { /* siehe readView() */ }
+}
 
 /** Kundenzugänge sehen dieselbe Liste, dürfen aber nichts ändern. */
 function canEdit() {
@@ -48,18 +78,23 @@ export const entriesView = {
             }
         }
 
+        // Der Kalender ist vorerst den Administratoren vorbehalten.
+        if (!canEdit()) mode = 'list';
+
         root.innerHTML = html`
-            <section class="stack">
+            <section class="stack ${mode === 'calendar' ? 'is-calendar' : ''}" id="entries">
                 <form class="card filters" id="filters">
                     <div class="filters__row">
-                        <label class="field field--inline">
-                            <span class="field__label">${t('common.from')}</span>
-                            <input class="input" type="date" name="from" value="${filters.from}">
-                        </label>
-                        <label class="field field--inline">
-                            <span class="field__label">${t('common.to')}</span>
-                            <input class="input" type="date" name="to" value="${filters.to}">
-                        </label>
+                        <span class="filters__dates">
+                            <label class="field field--inline">
+                                <span class="field__label">${t('common.from')}</span>
+                                <input class="input" type="date" name="from" value="${filters.from}">
+                            </label>
+                            <label class="field field--inline">
+                                <span class="field__label">${t('common.to')}</span>
+                                <input class="input" type="date" name="to" value="${filters.to}">
+                            </label>
+                        </span>
                         ${showClientFilter() ? html`
                             <label class="field field--inline field--grow">
                                 <span class="field__label">${t('common.client')}</span>
@@ -90,20 +125,31 @@ export const entriesView = {
                         </label>
                     </div>
                     <div class="filters__row filters__row--actions">
+                        ${canEdit() ? html`
+                            <div class="seg" title="${t('cal.display')}">
+                                <button type="button" class="seg__btn ${mode === 'list' ? 'is-active' : ''}"
+                                        data-view="list">${t('cal.viewList')}</button>
+                                <button type="button" class="seg__btn ${mode === 'calendar' ? 'is-active' : ''}"
+                                        data-view="calendar">${t('cal.viewCalendar')}</button>
+                            </div>` : ''}
                         <div class="chips">
-                            <button type="button" class="chip" data-range="today">${t('entries.rangeToday')}</button>
-                            <button type="button" class="chip" data-range="week">${t('entries.rangeWeek')}</button>
-                            <button type="button" class="chip" data-range="month">${t('entries.rangeMonth')}</button>
-                            <button type="button" class="chip" data-range="lastmonth">${t('entries.rangeLastMonth')}</button>
-                            <button type="button" class="chip" data-range="year">${t('entries.rangeYear')}</button>
-                            <button type="button" class="chip" data-range="all">${t('entries.rangeAll')}</button>
+                            <span class="filters__ranges">
+                                <button type="button" class="chip" data-range="today">${t('entries.rangeToday')}</button>
+                                <button type="button" class="chip" data-range="week">${t('entries.rangeWeek')}</button>
+                                <button type="button" class="chip" data-range="month">${t('entries.rangeMonth')}</button>
+                                <button type="button" class="chip" data-range="lastmonth">${t('entries.rangeLastMonth')}</button>
+                                <button type="button" class="chip" data-range="year">${t('entries.rangeYear')}</button>
+                                <button type="button" class="chip" data-range="all">${t('entries.rangeAll')}</button>
+                            </span>
                             <button type="button" class="chip" data-reset>${t('entries.resetFilters')}</button>
                         </div>
                         ${canEdit() ? html`
-                            <label class="switch">
-                                <input type="checkbox" name="trashed"> <span>${t('entries.trash')}</span>
-                            </label>
-                            <button type="button" class="btn btn--primary" id="new-entry">${t('entries.add')}</button>` : ''}
+                            <div class="filters__tools">
+                                <label class="switch">
+                                    <input type="checkbox" name="trashed"> <span>${t('entries.trash')}</span>
+                                </label>
+                                <button type="button" class="btn btn--primary" id="new-entry">${t('entries.add')}</button>
+                            </div>` : ''}
                     </div>
                 </form>
                 <div id="results"><div class="loading">${t('common.loading')}</div></div>
@@ -111,6 +157,7 @@ export const entriesView = {
 
         fillFilters(root);
         bind(root);
+        if (mode === 'calendar') applyCalendarRange(root);
         await refresh(root);
     },
 };
@@ -208,9 +255,15 @@ function bind(root) {
     form.querySelector('[name=q]').addEventListener('input', debounce(update, 350));
 
     form.addEventListener('click', (event) => {
+        const view = event.target.closest('[data-view]');
+        if (view) return setMode(root, view.dataset.view);
+
         if (event.target.closest('[data-reset]')) {
             resetFilters(form);
             fillFilters(root);
+            // Im Kalender gibt die Navigation den Zeitraum vor, nicht die
+            // zurückgesetzten Datumsfelder.
+            if (mode === 'calendar') applyCalendarRange(root);
             return refresh(root);
         }
 
@@ -225,6 +278,8 @@ function bind(root) {
     root.querySelector('#results').addEventListener('click', async (event) => {
         const edit = event.target.closest('[data-edit]');
         if (edit) return editEntry(root, Number(edit.dataset.edit));
+
+        if (mode === 'calendar' && onCalendarClick(root, event)) return;
 
         const del = event.target.closest('[data-delete]');
         if (del) {
@@ -245,6 +300,103 @@ function bind(root) {
             } catch (error) { toastError(error); }
         }
     });
+}
+
+// -- Darstellung umschalten -------------------------------------------------
+
+/**
+ * Zwischen Liste und Kalender wechseln. Der Kalender übernimmt beim
+ * Einschalten den zuletzt betrachteten Zeitraum als Ankertag; beim
+ * Zurückschalten bleibt der sichtbare Zeitraum in den Datumsfeldern stehen,
+ * die Liste zeigt also denselben Ausschnitt.
+ */
+function setMode(root, next) {
+    if (next === mode) return;
+    mode = next;
+
+    root.querySelector('#entries').classList.toggle('is-calendar', mode === 'calendar');
+    for (const button of root.querySelectorAll('[data-view]')) {
+        button.classList.toggle('is-active', button.dataset.view === mode);
+    }
+
+    if (mode === 'calendar') {
+        anchor = startDate();
+        applyCalendarRange(root);
+    }
+    storeView();
+    refresh(root);
+}
+
+/**
+ * Der Tag, auf dem der Kalender aufsetzt: heute, wenn es in den gefilterten
+ * Zeitraum fällt – sonst dessen Ende. Ein Sprung auf einen leeren Monat
+ * wäre sonst der Regelfall.
+ */
+function startDate() {
+    const today = todayISO();
+    const after = filters.from && today < filters.from;
+    const before = filters.to && today > filters.to;
+    if (!after && !before) return today;
+    return after ? filters.from : filters.to;
+}
+
+/** Zeitraum des Kalenders in die (dann verborgenen) Datumsfelder schreiben. */
+function applyCalendarRange(root) {
+    const { from, to } = calendarRange(scale, anchor);
+    const form = root.querySelector('#filters');
+
+    filters.from = from;
+    filters.to = to;
+    form.from.value = from;
+    form.to.value = to;
+}
+
+/**
+ * Klicks im Kalender. Gibt zurück, ob der Klick verarbeitet wurde – der
+ * Aufrufer prüft danach noch auf Löschen und Wiederherstellen.
+ */
+function onCalendarClick(root, event) {
+    const nav = event.target.closest('[data-nav]');
+    if (nav) {
+        const direction = Number(nav.dataset.nav);
+        anchor = direction ? shiftAnchor(scale, anchor, direction) : todayISO();
+        applyCalendarRange(root);
+        refresh(root);
+        return true;
+    }
+
+    const next = event.target.closest('[data-scale]');
+    if (next) {
+        scale = next.dataset.scale;
+        applyCalendarRange(root);
+        storeView();
+        refresh(root);
+        return true;
+    }
+
+    // Tageskopf, Tageszahl im Monat und „+n weitere“ führen in den Tag.
+    const open = event.target.closest('[data-open]');
+    if (open) {
+        scale = 'day';
+        anchor = open.dataset.open;
+        applyCalendarRange(root);
+        storeView();
+        refresh(root);
+        return true;
+    }
+
+    // Freie Fläche: neuer Eintrag an der angeklickten Stelle.
+    const slot = event.target.closest('[data-slot]');
+    if (slot && canEdit()) {
+        const grid = gridMinutes();
+        const start = minutesAt(slot, event.clientY, grid);
+        editEntry(root, null, start === null
+            ? { date: slot.dataset.slot }
+            : { date: slot.dataset.slot, start: minutesToTime(start), end: minutesToTime(start + 60) });
+        return true;
+    }
+
+    return Boolean(slot);
 }
 
 function resetFilters(form) {
@@ -274,11 +426,7 @@ function applyRange(form, range) {
     // "Gesamt" heißt: keine Datumsgrenzen – der Server liefert dann alles.
     if (range === 'all') return set('', '');
     if (range === 'today') return set(today, today);
-    if (range === 'week') {
-        const date = new Date();
-        const offset = (date.getDay() + 6) % 7; // Montag als Wochenstart
-        return set(shiftDays(today, -offset), today);
-    }
+    if (range === 'week') return set(startOfWeek(today), today);
     if (range === 'month') return set(startOfMonth(), today);
     if (range === 'lastmonth') {
         const [y, m] = today.split('-').map(Number);
@@ -298,29 +446,44 @@ async function refresh(root) {
         const data = await api.get('/entries', {
             ...filters,
             group: 'day',
-            limit: 500,
+            // Ein Monatsraster umfasst bis zu sechs Wochen; die Liste zeigt
+            // ohnehin nur einen Ausschnitt und meldet den Rest.
+            limit: mode === 'calendar' ? 1000 : 500,
         });
+
+        if (mode === 'calendar') {
+            // Ein leerer Kalender ist kein Sonderfall – das leere Raster ist
+            // genau das, was man sehen will.
+            host.innerHTML = html`
+                ${summary(data)}
+                ${calendarHtml(data.days, { scale, anchor, editable: canEdit() })}`;
+            scrollToFirstEvent(host);
+            return;
+        }
 
         if (!data.days.length) {
             host.innerHTML = html`<div class="card"><p class="muted card__body">${t('entries.empty')}</p></div>`;
             return;
         }
 
-        host.innerHTML = html`
-            <div class="summary card">
-                <span><strong>${data.totals.hhmm}</strong> <span class="muted">${t('common.hours')}</span></span>
-                ${data.totals.amount !== undefined
-                    ? html`<span><strong>${money(data.totals.amount)}</strong></span>` : ''}
-                <span class="muted">${data.totals.entries} ${t('common.entries')}</span>
-                ${data.total > data.totals.entries
-                    ? html`<span class="muted">
-                        ${t('entries.countOf', { shown: data.totals.entries, total: data.total })}</span>` : ''}
-            </div>
-            ${data.days.map(dayGroup)}`;
+        host.innerHTML = html`${summary(data)}${data.days.map(dayGroup)}`;
     } catch (error) {
         toastError(error);
         host.innerHTML = html`<div class="card"><p class="card__body">${t('common.loadFailed')}</p></div>`;
     }
+}
+
+function summary(data) {
+    return html`
+        <div class="summary card">
+            <span><strong>${data.totals.hhmm}</strong> <span class="muted">${t('common.hours')}</span></span>
+            ${data.totals.amount !== undefined
+                ? html`<span><strong>${money(data.totals.amount)}</strong></span>` : ''}
+            <span class="muted">${data.totals.entries} ${t('common.entries')}</span>
+            ${data.total > data.totals.entries
+                ? html`<span class="muted">
+                    ${t('entries.countOf', { shown: data.totals.entries, total: data.total })}</span>` : ''}
+        </div>`;
 }
 
 function dayGroup(day) {
@@ -368,7 +531,42 @@ function row(entry) {
 
 // -- Bearbeiten -------------------------------------------------------------
 
-async function editEntry(root, id) {
+/**
+ * Schrittweite der Zeitfelder: das Raster aus den Einstellungen – dasselbe,
+ * nach dem auch gerundet wird. Ohne geladene Einstellung die dortige
+ * Voreinstellung von 15 Minuten.
+ */
+function gridMinutes() {
+    const minutes = Number(state.settings?.rounding_minutes);
+    return Number.isFinite(minutes) && minutes >= 1 ? Math.min(240, Math.round(minutes)) : 15;
+}
+
+/**
+ * Ein Zeitfeld mit Schrittschaltern. Der native Schritt (Pfeiltasten im Feld)
+ * liegt auf demselben Raster wie die Knöpfe.
+ */
+function timeField(name, label, value, grid) {
+    return html`
+        <div class="field field--inline">
+            <label class="field__label" for="entry-${name}">${label}</label>
+            <div class="timefield">
+                <input class="input" type="time" id="entry-${name}" name="${name}"
+                    step="${grid * 60}" value="${value}">
+                <span class="timefield__steps">
+                    <button type="button" class="timefield__step" data-step="${name}" data-dir="1"
+                        tabindex="-1" aria-label="${t('entries.stepUp', { minutes: grid })}">▲</button>
+                    <button type="button" class="timefield__step" data-step="${name}" data-dir="-1"
+                        tabindex="-1" aria-label="${t('entries.stepDown', { minutes: grid })}">▼</button>
+                </span>
+            </div>
+        </div>`;
+}
+
+/**
+ * Eintrag anlegen oder bearbeiten. `preset` füllt Datum und Uhrzeit vor –
+ * so übernimmt ein Klick ins Kalenderraster die dort angeklickte Stelle.
+ */
+async function editEntry(root, id, preset = null) {
     let entry = null;
     if (id) {
         try {
@@ -377,6 +575,9 @@ async function editEntry(root, id) {
     }
 
     await loadTree();
+    // Das Raster steht in den Einstellungen; einmal je Sitzung reicht.
+    if (!state.settings?.rounding_minutes) await loadSettings();
+    const grid = gridMinutes();
     let subprojectId = entry?.subproject_id ?? flatSubprojects()[0]?.id ?? null;
     let subprojectLabel = entry?.path ?? flatSubprojects()[0]?.path ?? t('common.dash');
 
@@ -389,16 +590,15 @@ async function editEntry(root, id) {
         <div class="filters__row">
             <label class="field field--inline">
                 <span class="field__label">${t('common.date')}</span>
-                <input class="input" type="date" name="date" value="${entry?.date ?? todayISO()}">
+                <input class="input" type="date" name="date"
+                    value="${entry?.date ?? preset?.date ?? todayISO()}">
             </label>
-            <label class="field field--inline">
-                <span class="field__label">${t('common.from')}</span>
-                <input class="input" type="time" name="start" step="60" value="${entry?.start_time ?? '09:00'}">
-            </label>
-            <label class="field field--inline">
-                <span class="field__label">${t('common.to')}</span>
-                <input class="input" type="time" name="end" step="60" value="${entry?.end_time ?? '10:00'}">
-            </label>
+            ${timeField('start', t('common.from'), entry?.start_time ?? preset?.start ?? '09:00', grid)}
+            ${timeField('end', t('common.to'), entry?.end_time ?? preset?.end ?? '10:00', grid)}
+            <div class="field field--inline">
+                <span class="field__label">${t('common.duration')}</span>
+                <output class="timesum" data-duration></output>
+            </div>
         </div>
         <label class="field">
             <span class="field__label">${t('common.notes')}</span>
@@ -429,6 +629,49 @@ async function editEntry(root, id) {
     });
 
     const get = (name) => node.querySelector(`[name=${name}]`);
+
+    /**
+     * Nächster bzw. vorheriger Rasterpunkt. Eine Zeit neben dem Raster
+     * (etwa aus einem gestoppten Timer) rastet damit beim ersten Klick ein,
+     * statt den Versatz mitzuschleppen.
+     */
+    function stepTime(name, direction) {
+        const input = get(name);
+        const current = timeToMinutes(input.value);
+        if (current === null) return;
+
+        input.value = minutesToTime(direction > 0
+            ? (Math.floor(current / grid) + 1) * grid
+            : (Math.ceil(current / grid) - 1) * grid);
+        showDuration();
+    }
+
+    /** Gesamtzeit hinter den Feldern – dieselbe Mitternachtsregel wie beim Speichern. */
+    function showDuration() {
+        const out = node.querySelector('[data-duration]');
+        const start = timeToMinutes(get('start').value);
+        const end = timeToMinutes(get('end').value);
+
+        if (start === null || end === null) {
+            out.innerHTML = html`<span class="muted">${t('common.dash')}</span>`;
+            return;
+        }
+
+        const overnight = end < start;
+        out.innerHTML = html`
+            ${hhmm(overnight ? end + 1440 - start : end - start)}
+            ${overnight ? html`<span class="tag" title="${t('entries.overnight')}">+1</span>` : ''}`;
+    }
+
+    node.addEventListener('click', (event) => {
+        const step = event.target.closest('[data-step]');
+        if (step) stepTime(step.dataset.step, Number(step.dataset.dir));
+    });
+    node.addEventListener('input', (event) => {
+        if (event.target.name === 'start' || event.target.name === 'end') showDuration();
+    });
+    showDuration();
+
     let overlaps = 0;
 
     const saved = await saveDialog({

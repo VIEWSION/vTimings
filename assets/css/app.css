@@ -380,11 +380,303 @@ pre {
 }
 .summary strong { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
 
+/* -- Kalender ------------------------------------------------------------- */
+/* Zweite Darstellung der Einträge. Tag und Woche sind ein Stundenraster mit
+   absolut gesetzten Blöcken: 24 Stunden hoch, Position und Höhe eines
+   Blocks in Prozent der 1.440 Minuten eines Tages. Der Monat ist ein
+   einfaches Sieben-Spalten-Raster. */
+
+.cal { --hour-h: 3rem; }
+
+.cal__bar { flex-wrap: wrap; }
+.cal__nav { display: flex; align-items: center; gap: 0.25rem; }
+.cal__title { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+
+.cal__body {
+    max-height: min(70svh, 42rem);
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.cal__canvas {
+    display: grid;
+    grid-template-columns: 3.25rem 1fr;
+    grid-template-rows: auto calc(var(--hour-h) * 24);
+}
+
+/* Feste Plätze im Raster: die Tagesleiste fehlt in der Tagesansicht, die
+   Stunden dürfen deshalb nicht nach oben rutschen. */
+.cal__corner { grid-area: 1 / 1; }
+.cal__days   { grid-area: 1 / 2; }
+.cal__hours  { grid-area: 2 / 1; }
+.cal__cols   { grid-area: 2 / 2; }
+
+/* Die Kopfzeile bleibt beim Scrollen stehen, die Stundenleiste beim
+   seitlichen Scrollen schmaler Fenster. */
+.cal__corner {
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.cal__days {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.cal__dayhead { flex: 1 1 0; min-width: 0; border-left: 1px solid var(--border); }
+.cal__dayhead.is-today { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+.cal__daylink {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    width: 100%;
+    padding: 0.4rem 0.3rem;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.cal__daylink:hover .cal__dayname { color: var(--accent); }
+.cal__dayname { font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.cal__dayhead.is-today .cal__dayname { color: var(--accent); }
+.cal__daysum {
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.cal__hours {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--surface);
+}
+.cal__hour {
+    position: absolute;
+    right: 0.4rem;
+    transform: translateY(-50%);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.cal__cols { display: flex; }
+
+.cal__col {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    border-left: 1px solid var(--border);
+    /* Eine Linie je Stunde – 100 % der Verlaufslinie ist die Spaltenhöhe. */
+    background-image: repeating-linear-gradient(
+        to bottom,
+        var(--border) 0 1px,
+        transparent 1px calc(100% / 24));
+}
+.cal__col.is-today { background-color: color-mix(in srgb, var(--accent) 6%, transparent); }
+.cal__col:hover { background-color: color-mix(in srgb, var(--text) 4%, transparent); }
+
+.cal__now {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    height: 0;
+    border-top: 2px solid var(--danger);
+    pointer-events: none;
+}
+.cal__now::before {
+    content: "";
+    position: absolute;
+    left: -3px;
+    top: -4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+}
+
+.cal__event {
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    min-height: 1.1rem;
+    padding: 0.15rem 0.3rem;
+    overflow: hidden;
+    border: 0;
+    border-left: 3px solid var(--c);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--c) 22%, var(--surface));
+    color: var(--text);
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    text-align: left;
+    cursor: pointer;
+}
+.cal__event:hover { background: color-mix(in srgb, var(--c) 34%, var(--surface)); }
+.cal__event:disabled { cursor: default; }
+.cal__event.is-billed { opacity: 0.7; }
+.cal__event.is-deleted, .cal__chip.is-deleted { opacity: 0.5; text-decoration: line-through; }
+
+.cal__time { font-variant-numeric: tabular-nums; color: var(--text-muted); white-space: nowrap; }
+.cal__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal__sub, .cal__note { color: var(--text-muted); }
+.cal__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal__note { overflow-wrap: anywhere; }
+
+/* Kurze Einträge haben nur Platz für eine Zeile – dann Zeit und Name
+   nebeneinander, alles Weitere steht im Tooltip. */
+.cal__event.is-short { flex-direction: row; gap: 0.3rem; align-items: baseline; padding: 0 0.3rem; }
+.cal__event.is-short .cal__time { flex: none; }
+.cal__event.is-short .cal__name { flex: 1; min-width: 0; }
+
+/* -- Kalender: Monat ------------------------------------------------------- */
+
+.cal__monthscroll { overflow-x: auto; }
+
+.cal__weekhead, .cal__grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(6rem, 1fr));
+}
+.cal__weekhead {
+    border-bottom: 1px solid var(--border);
+}
+.cal__weekhead span {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-left: 1px solid var(--border);
+}
+.cal__weekhead span:first-child { border-left: 0; }
+
+.cal__cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-height: 6.5rem;
+    padding: 0.3rem;
+    border-left: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+.cal__cell:nth-child(7n + 1) { border-left: 0; }
+.cal__cell.is-outside { background: var(--surface-2); }
+.cal__cell.is-outside .cal__daynum { color: var(--text-muted); }
+.cal__cell.is-today { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+.cal__cellhead { display: flex; align-items: baseline; justify-content: space-between; gap: 0.3rem; }
+.cal__daynum {
+    padding: 0 0.25rem;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.cal__daynum:hover { background: var(--surface-2); color: var(--accent); }
+.cal__cell.is-today .cal__daynum { background: var(--accent); color: var(--accent-text); }
+
+.cal__chips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.cal__chip {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    width: 100%;
+    padding: 0.1rem 0.3rem;
+    border: 0;
+    border-left: 3px solid var(--c);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--c) 20%, var(--surface));
+    color: var(--text);
+    font: inherit;
+    font-size: 0.75rem;
+    text-align: left;
+    cursor: pointer;
+}
+.cal__chip:hover { background: color-mix(in srgb, var(--c) 32%, var(--surface)); }
+.cal__chip:disabled { cursor: default; }
+.cal__chip.is-billed { opacity: 0.7; }
+.cal__chiptime { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.cal__chipname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cal__more {
+    padding: 0 0.3rem;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+.cal__more:hover { color: var(--accent); }
+
+/* Auf schmalen Bildschirmen läuft die Woche seitlich; die Stundenleiste
+   bleibt dabei stehen. Der einzelne Tag braucht die Mindestbreite nicht. */
+@media (max-width: 700px) {
+    .cal { --hour-h: 2.75rem; }
+    .cal--week .cal__canvas { min-width: 44rem; }
+    .cal__title { flex-basis: 100%; order: -1; }
+}
+
 /* -- Filter --------------------------------------------------------------- */
 
 .filters { padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
 .filters__row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; }
-.filters__row--actions { align-items: center; justify-content: space-between; }
+.filters__row--actions { align-items: center; }
+
+/* Die beiden Gruppen sind nur Klammern zum Aus- und Einblenden – sie sollen
+   das Flex-Layout ihrer Zeile nicht verändern. */
+.filters__dates, .filters__ranges { display: contents; }
+.filters__tools { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
+
+/* Im Kalender geben Maßstab und Navigation den Zeitraum vor; die
+   Datumsfelder und die Zeitraum-Schalter würden ihm widersprechen. Die
+   Felder bleiben im Formular stehen und tragen den Zeitraum weiterhin an
+   die API. */
+.is-calendar .filters__dates, .is-calendar .filters__ranges { display: none; }
+
+/* Segmentierter Umschalter (Darstellung, Kalender-Maßstab). */
+.seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-2);
+}
+.seg__btn {
+    padding: 0.25rem 0.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 550;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.seg__btn:hover { color: var(--text); }
+.seg__btn.is-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .chip {
@@ -442,6 +734,37 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 .input--button { text-align: left; cursor: pointer; }
 
 .switch { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
+
+/* Zeitfeld mit Schrittschaltern – die Schrittweite ist das Raster aus den
+   Einstellungen. Die native Zeitauswahl des Browsers bleibt daneben nutzbar. */
+.timefield { display: flex; align-items: stretch; gap: 0.25rem; }
+.timefield .input { width: auto; }
+.timefield__steps { display: flex; flex-direction: column; gap: 2px; }
+.timefield__step {
+    font: inherit;
+    font-size: 0.6rem;
+    line-height: 1;
+    flex: 1 1 50%;
+    min-width: 1.6rem;
+    padding: 0 0.3rem;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.timefield__step:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* Gesamtzeit neben den Zeitfeldern – gleiche Höhe wie ein Eingabefeld. */
+.timesum {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.5rem;
+    padding: 0 0.15rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
 
 .btn {
     font: inherit;

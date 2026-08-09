@@ -159,5 +159,17 @@ $documentTitle = sprintf(
     <?php endif; ?>
 
 </div>
+
+<script>
+// Safari lässt die Seite nach dem Druckdialog gelegentlich weiß zurück – der
+// Inhalt steht noch im DOM, nur gezeichnet wird er nicht mehr. Ein erzwungener
+// Reflow holt ihn zurück, ohne dass man neu laden muss.
+window.addEventListener('afterprint', function () {
+    var body = document.body;
+    body.style.display = 'none';
+    void body.offsetHeight;
+    body.style.display = '';
+});
+</script>
 </body>
 </html>

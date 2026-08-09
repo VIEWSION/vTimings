@@ -18,6 +18,12 @@
 
 html { font-size: 10.5pt; }
 
+/* Kein `print-color-adjust: exact`. Diese Vorlage hat im Druck überhaupt
+   keine farbigen Flächen – jede Farbe steckt in Text oder in einer dünnen
+   Linie, und die druckt jeder Browser ohnehin. `exact` würde Safari nur
+   zwingen, die weiße Fläche von body und .sheet über den ganzen (bei
+   Jahresberichten 20+ Seiten langen) Beleg zu rastern. Genau daran ist der
+   Druck bisher gescheitert: ab Seite 5 blieb alles leer. */
 body {
     margin: 0;
     padding: 0;
@@ -25,8 +31,6 @@ body {
     color: var(--ink);
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     line-height: 1.45;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
 }
 
 .sheet {
@@ -96,7 +100,12 @@ body {
     margin: 0 0 2mm;
 }
 
-.items { width: 100%; border-collapse: collapse; }
+/* `border-spacing: 0` statt `border-collapse: collapse`: Safari ignoriert
+   `break-inside: avoid` auf <tr> (siehe unten), sobald die Tabelle Ränder
+   kollabiert – dann greift intern ein anderes Fragmentierungsmodell.
+   Sichtbar ändert sich nichts, da hier ohnehin nur Bottom-Ränder gesetzt
+   sind, keine sich berührenden Ränder benachbarter Zellen. */
+.items { width: 100%; border-collapse: separate; border-spacing: 0; }
 
 .items thead th {
     font-size: 8pt;
@@ -193,7 +202,22 @@ body {
 .toolbar .spacer { flex: 1; }
 
 @media print {
-    body { background: #fff; }
-    .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
-    .toolbar { display: none; }
+    /* Papier ist schon weiß. Beide Flächen durchsichtig lassen, statt Weiß
+       auf Weiß zu malen – das erspart dem Drucklayout eine Rasterfläche über
+       die volle Beleglänge. */
+    body { background: transparent; }
+
+    .sheet {
+        width: auto;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    /* display:none nimmt die Leiste zwar aus dem Layout, `position: sticky`
+       hat in WebKit aber schon eine eigene Kompositionsebene angelegt.
+       Zurücksetzen, damit im Druck keine übrig bleibt. */
+    .toolbar { display: none; position: static; }
 }

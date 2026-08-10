@@ -177,6 +177,9 @@ const STRINGS = {
         // -- Stammdaten -----------------------------------------------------
         'master.searchPlaceholder': 'Kunde, Projekt, Teilprojekt …',
         'master.showArchived': 'Archivierte',
+        'master.sortBy': 'Sortierung',
+        'master.sortName': 'Alphabet',
+        'master.sortActivity': 'Zuletzt aktiv',
         'master.clients': 'Kunden',
         'master.projects': 'Projekte',
         'master.addClient': 'Kunde anlegen',
@@ -478,6 +481,9 @@ const STRINGS = {
         // -- Stammdaten -----------------------------------------------------
         'master.searchPlaceholder': 'Customer, project, subproject …',
         'master.showArchived': 'Archived',
+        'master.sortBy': 'Sort by',
+        'master.sortName': 'Alphabetical',
+        'master.sortActivity': 'Recent activity',
         'master.clients': 'Customers',
         'master.projects': 'Projects',
         'master.addClient': 'Add customer',

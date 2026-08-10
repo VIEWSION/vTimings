@@ -803,8 +803,11 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 /* -- Dreispalter ---------------------------------------------------------- */
 
 .browser { display: flex; flex-direction: column; gap: 0.75rem; }
-.browser__bar { display: flex; gap: 0.75rem; align-items: center; }
-.browser__bar .input { flex: 1; }
+.browser__bar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+/* Suchfeld darf schrumpfen, aber nicht unlesbar schmal werden – dann bricht
+   eher die Zeile um, als dass Sortierung und Archiviert-Schalter verdrängt
+   werden. */
+.browser__bar .input { flex: 1 1 12rem; min-width: 10rem; }
 
 .columns { display: grid; gap: 1rem; grid-template-columns: 1fr; }
 

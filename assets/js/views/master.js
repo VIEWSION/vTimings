@@ -9,6 +9,43 @@ import { esc, html, money } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
 
+// Sortierung der drei Spalten. Betrifft nur die Darstellung – Auswahl und
+// Suche arbeiten weiterhin über die IDs, nicht über die Reihenfolge.
+const SORT_KEY = 'vt.masterSort';
+let sortBy = readSort();
+
+/** Überdauert die Sitzung – wie Darstellung und Maßstab im Kalender. */
+function readSort() {
+    try {
+        return localStorage.getItem(SORT_KEY) === 'activity' ? 'activity' : 'name';
+    } catch {
+        return 'name'; // Privater Modus: dann eben ohne Erinnerung.
+    }
+}
+
+function storeSort() {
+    try {
+        localStorage.setItem(SORT_KEY, sortBy);
+    } catch { /* siehe readSort() */ }
+}
+
+/**
+ * "Zuletzt aktiv" räumt nicht die Archivierung um: archivierte Einträge
+ * stehen weiterhin hinten, wie es die API schon liefert. Innerhalb einer
+ * Gruppe kommt zuerst, wer zuletzt gebucht hat; ganz ohne Buchung ans Ende
+ * der Gruppe, danach alphabetisch als stabiler Tiebreak.
+ */
+function sortRows(list) {
+    if (sortBy !== 'activity') return list;
+    return [...list].sort((a, b) => {
+        if (a.archived !== b.archived) return a.archived ? 1 : -1;
+        const at = a.stats?.last_at ? Date.parse(a.stats.last_at) : -Infinity;
+        const bt = b.stats?.last_at ? Date.parse(b.stats.last_at) : -Infinity;
+        if (at !== bt) return bt - at;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+}
+
 export const masterView = {
     async render(root) {
         root.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
@@ -19,6 +56,12 @@ export const masterView = {
                 <header class="browser__bar">
                     <input class="input" type="search" id="master-search"
                         placeholder="${t('master.searchPlaceholder')}" value="${sel.q}">
+                    <div class="seg" title="${t('master.sortBy')}">
+                        <button type="button" class="seg__btn ${sortBy === 'name' ? 'is-active' : ''}"
+                                data-sort="name">${t('master.sortName')}</button>
+                        <button type="button" class="seg__btn ${sortBy === 'activity' ? 'is-active' : ''}"
+                                data-sort="activity">${t('master.sortActivity')}</button>
+                    </div>
                     <label class="switch">
                         <input type="checkbox" id="show-archived" ${sel.archived ? 'checked' : ''}>
                         <span>${t('master.showArchived')}</span>
@@ -40,11 +83,13 @@ export const masterView = {
 
 function clients() {
     const needle = sel.q.trim().toLowerCase();
-    if (!needle) return state.tree?.clients || [];
-    return (state.tree?.clients || []).filter((c) =>
-        c.name.toLowerCase().includes(needle) ||
-        c.projects.some((p) => p.name.toLowerCase().includes(needle) ||
-            p.subprojects.some((s) => s.name.toLowerCase().includes(needle))));
+    const list = needle
+        ? (state.tree?.clients || []).filter((c) =>
+            c.name.toLowerCase().includes(needle) ||
+            c.projects.some((p) => p.name.toLowerCase().includes(needle) ||
+                p.subprojects.some((s) => s.name.toLowerCase().includes(needle))))
+        : (state.tree?.clients || []);
+    return sortRows(list);
 }
 
 function currentClient() {
@@ -120,7 +165,7 @@ function drawProjects(root) {
             <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">${t('common.delete')}</button>
         </div>
         <ul class="rows">
-            ${client.projects.map((project) => html`
+            ${sortRows(client.projects).map((project) => html`
                 <li>
                     <button class="row ${project.id === sel.projectId ? 'is-active' : ''} ${project.archived ? 'is-archived' : ''}"
                             data-project="${project.id}">
@@ -167,7 +212,7 @@ function drawSubprojects(root) {
                 </span>
             </div>` : ''}
         <ul class="rows">
-            ${project.subprojects.map((sub) => html`
+            ${sortRows(project.subprojects).map((sub) => html`
                 <li>
                     <span class="row row--static ${sub.archived ? 'is-archived' : ''}">
                         <span class="row__main">
@@ -196,6 +241,18 @@ function bind(root) {
     root.querySelector('#show-archived').addEventListener('change', async (event) => {
         sel.archived = event.target.checked;
         await masterView.render(root);
+    });
+
+    root.querySelector('.browser__bar .seg').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-sort]');
+        if (!button || button.dataset.sort === sortBy) return;
+
+        sortBy = button.dataset.sort;
+        storeSort();
+        for (const el of root.querySelectorAll('[data-sort]')) {
+            el.classList.toggle('is-active', el.dataset.sort === sortBy);
+        }
+        draw(root);
     });
 
     // Die Ansicht baut sich nach jedem Speichern neu auf, der Wirt bleibt.

@@ -184,10 +184,12 @@ CRUD   /api/clients · projects · subprojects
 
 GET    /api/entries?from&to&client_id&project_id&q&billed&group=day
 POST   /api/entries
-PATCH  /api/entries/{id}
+PATCH  /api/entries/{id}               billed: true|false setzt den Status (s. u.)
 POST   /api/entries/batch              { ids, subproject_id?, rate_mode?: keep|inherit|fixed,
-                                         rate?, billable? } – keine Zeiten/Notizen;
-                                         abgerechnete Einträge werden übersprungen
+                                         rate?, billable?, billed?: true|false }
+                                         – keine Zeiten/Notizen. billed=false öffnet
+                                         abgerechnete Einträge wieder (nicht mit Rechnung),
+                                         sonst bleiben sie gesperrt und werden übersprungen
 DELETE /api/entries/{id}               Papierkorb
 POST   /api/entries/{id}/restore
 GET    /api/entries/recent             Schnellwahl

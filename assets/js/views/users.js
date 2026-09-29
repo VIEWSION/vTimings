@@ -3,6 +3,7 @@
 import { api } from '../api.js';
 import { state, loadTree } from '../store.js';
 import { t } from '../i18n.js';
+import { enhanceCombos } from '../combo.js';
 import { confirmDialog, dialog, saveDialog, toast, toastError } from '../ui.js';
 import { esc, formatDateTime, html } from '../util.js';
 
@@ -141,13 +142,15 @@ async function editUser(host, user) {
             </select></label>
         <div data-client-fields>
             <label class="field"><span class="field__label">${t('common.client')}</span>
-                <select class="input" name="client_id">
+                <select class="input" name="client_id" data-combo>
                     ${clients.map((c) => html`
-                        <option value="${c.id}" ${user?.client_id === c.id ? 'selected' : ''}>${c.name}</option>`)}
+                        <option value="${c.id}" ${c.color ? { __raw: `data-color="${esc(c.color)}"` } : ''}
+                            ${user?.client_id === c.id ? 'selected' : ''}>${c.name}</option>`)}
                 </select></label>
             <label class="field">
                 <span class="field__label">${t('users.visibleProjects')}</span>
-                <select class="input" name="project_filter" multiple size="6"></select>
+                <select class="input" name="project_filter" multiple data-combo
+                    data-placeholder="${t('users.allProjects')}"></select>
                 <span class="field__hint">${t('users.visibleProjectsHint')}</span>
             </label>
             <label class="switch">
@@ -166,7 +169,7 @@ async function editUser(host, user) {
     function fillProjects() {
         const client = clients.find((c) => c.id === Number(clientSelect.value));
         projectSelect.innerHTML = (client?.projects || [])
-            .map((p) => `<option value="${p.id}"${
+            .map((p) => `<option value="${p.id}"${p.color ? ` data-color="${esc(p.color)}"` : ''}${
                 user?.project_filter?.includes(p.id) ? ' selected' : ''}>${esc(p.name)}</option>`)
             .join('');
     }
@@ -178,6 +181,7 @@ async function editUser(host, user) {
     clientSelect.addEventListener('change', fillProjects);
     fillProjects();
     toggleRole();
+    enhanceCombos(node);
 
     const saved = await saveDialog({
         title: user ? t('users.edit') : t('users.add'),

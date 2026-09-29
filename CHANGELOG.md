@@ -12,6 +12,32 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.7.0] – 2026-09-29
+
+### Neu
+- Auswahlfelder für Kunde, Projekt und Teilprojekt zeigen die hinterlegten
+  Farben (Projekte erben die Kundenfarbe) und haben ab acht Einträgen ein
+  Suchfeld – Tippen grenzt ein, Enter übernimmt den ersten Treffer.
+  Bedienbar mit Pfeiltasten, Enter und Esc.
+- Gilt für die Filter in „Einträge“ und den Zugangs-Dialog; die sichtbaren
+  Projekte eines Kundenzugangs werden dort per Häkchen gewählt statt mit
+  Cmd-Klick in einer Mehrfachliste.
+- Status „offen“ / „abgerechnet“ beim Anlegen, Bearbeiten und im
+  Sammelbearbeiten – bisher gab es keinen Weg, Einträge als abgerechnet zu
+  markieren. „Abgerechnet“ wendet zuerst die übrigen Änderungen an und
+  sperrt dann; „offen“ gibt gesperrte Einträge wieder frei und korrigiert sie
+  im selben Schritt. Einträge, die an einer Rechnung hängen, bleiben gesperrt.
+- Bearbeiten-Dialog eines abgerechneten Eintrags: Felder ausgegraut mit
+  Hinweis, frei erst nach Wechsel auf „offen“.
+
+### Geändert
+- Status als Symbol vor der Dauer: grünes Häkchen = abgerechnet (Datum und
+  ggf. Rechnungsnummer als Tooltip), dezenter leerer Kreis = offen – jede
+  Zeile hat ein Symbol, die Proportionen bleiben gleich. Abgerechnete
+  Einträge haben zusätzlich einen grünen Rahmen; im Kalender steht das
+  Häkchen vor der Uhrzeit. Das Etikett „Rechnung —“ und das Abblenden
+  entfallen. Die Sperrmeldung sagt, wie man sie wieder freigibt.
+
 ## [1.6.0] – 2026-09-29
 
 ### Neu

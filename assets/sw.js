@@ -15,6 +15,7 @@ const SHELL = [
     BASE + 'assets/css/app.css',
     BASE + 'assets/js/app.js',
     BASE + 'assets/js/api.js',
+    BASE + 'assets/js/combo.js',
     BASE + 'assets/js/i18n.js',
     BASE + 'assets/js/prefs.js',
     BASE + 'assets/js/store.js',

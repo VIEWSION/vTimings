@@ -4,14 +4,15 @@
 import { api } from '../api.js';
 import { state, loadTree, loadSettings, invalidateTree, flatSubprojects } from '../store.js';
 import { t } from '../i18n.js';
+import { enhanceCombos } from '../combo.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
-    calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
+    billedMark, calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
 } from './calendar.js';
 import { exportDialog, GROUP_KEYS, groupChips, reportDialog, statsHtml } from './output.js';
 import {
-    dateTimeToISO, dayLabel, debounce, esc, hhmm, html, minutesToTime, money, shiftDays,
+    dateTimeToISO, dayLabel, debounce, esc, formatDateTime, hhmm, html, minutesToTime, money, shiftDays,
     startOfMonth, startOfWeek, timeToMinutes, todayISO,
 } from '../util.js';
 
@@ -142,15 +143,15 @@ export const entriesView = {
                         ${showClientFilter() ? html`
                             <label class="field field--inline field--grow">
                                 <span class="field__label">${t('common.client')}</span>
-                                <select class="input" name="client_id"></select>
+                                <select class="input" name="client_id" data-combo></select>
                             </label>` : ''}
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.project')}</span>
-                            <select class="input" name="project_id"></select>
+                            <select class="input" name="project_id" data-combo></select>
                         </label>
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.subproject')}</span>
-                            <select class="input" name="subproject_id"></select>
+                            <select class="input" name="subproject_id" data-combo></select>
                         </label>
                     </div>
                     <div class="filters__row">
@@ -205,11 +206,17 @@ export const entriesView = {
             </section>`;
 
         fillFilters(root);
+        enhanceCombos(root);
         bind(root);
         if (mode === 'calendar') applyCalendarRange(root);
         await refresh(root);
     },
 };
+
+/** Farbe für den Punkt im Auswahlfeld (combo.js); Projekte erben sie schon vom Server. */
+function colorAttr(color) {
+    return color ? ` data-color="${esc(color)}"` : '';
+}
 
 /** Kunden-, Projekt- und Teilprojektauswahl befüllen und aufeinander abstimmen. */
 function fillFilters(root) {
@@ -218,7 +225,7 @@ function fillFilters(root) {
 
     if (clientSelect) {
         clientSelect.innerHTML = `<option value="">${esc(t('entries.allClients'))}</option>` +
-            clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+            clients.map((c) => `<option value="${c.id}"${colorAttr(c.color)}>${esc(c.name)}</option>`).join('');
         clientSelect.value = filters.client_id;
     }
 
@@ -241,7 +248,7 @@ function fillProjects(root) {
 
     const many = clients.length > 1 && !clientId;
     select.innerHTML = `<option value="">${esc(t('entries.allProjects'))}</option>` + projects
-        .map((p) => `<option value="${p.id}">${esc(many ? `${p.client} | ${p.name}` : p.name)}</option>`)
+        .map((p) => `<option value="${p.id}"${colorAttr(p.color)}>${esc(many ? `${p.client} | ${p.name}` : p.name)}</option>`)
         .join('');
 
     // Auswahl nur halten, wenn sie zum aktuellen Kunden noch passt.
@@ -265,7 +272,7 @@ function fillSubprojects(root) {
     select.disabled = !projectId;
     select.innerHTML = projectId
         ? `<option value="">${esc(t('entries.allSubprojects'))}</option>` +
-          subs.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')
+          subs.map((s) => `<option value="${s.id}"${colorAttr(s.color)}>${esc(s.name)}</option>`).join('')
         : `<option value="">${esc(t('entries.pickProjectFirst'))}</option>`;
 
     select.value = subs.some((s) => String(s.id) === filters.subproject_id) ? filters.subproject_id : '';
@@ -756,11 +763,9 @@ function row(entry) {
                     <span class="muted"> · ${entry.client_name} · ${entry.project_name}</span>
                 </span>
                 ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
-                ${entry.billed ? html`<span class="tag tag--billed">
-                    ${t('entries.invoice', { number: entry.invoice_number || t('common.dash') })}</span>` : ''}
             </span>
             <span class="entry__dur">
-                ${entry.hhmm}
+                ${billedMark(entry, { open: true })}${entry.hhmm}
                 ${entry.amount !== undefined ? html`<span class="muted entry__amount">${money(entry.amount)}</span>` : ''}
                 ${entry.rate !== undefined ? html`<span class="muted entry__rate">
                     ${t('entries.perHour', { rate: money(entry.rate, entry.currency) })}</span>` : ''}
@@ -779,19 +784,17 @@ function row(entry) {
 // -- Sammelbearbeiten -------------------------------------------------------
 
 /**
- * Mehrere Einträge auf einmal ändern: verschieben, Stundensatz, abrechenbar.
- * Zeiten, Dauer und Notizen gibt es hier bewusst nicht – die sind je Eintrag
- * verschieden, und der Server nimmt sie in diesem Weg auch nicht an.
+ * Mehrere Einträge auf einmal ändern: verschieben, Stundensatz, abrechenbar,
+ * Status. Zeiten, Dauer und Notizen gibt es hier bewusst nicht – die sind je
+ * Eintrag verschieden, und der Server nimmt sie in diesem Weg auch nicht an.
  */
 async function batchEdit(root) {
-    // Abgerechnete Einträge dürfen in der Auswahl stehen (für einen erneuten
-    // Nachweis), geändert werden sie nicht – das würde die Rechnung verfälschen.
-    const billed = [...selected].filter((id) => loaded.get(id)?.billed).length;
-    const ids = [...selected].filter((id) => !loaded.get(id)?.billed);
-    if (!ids.length) {
-        toast(t('batch.onlyBilled'), 'info', 5000);
-        return;
-    }
+    // Abgerechnete Einträge sind gesperrt. Sie dürfen trotzdem in der Auswahl
+    // stehen: für einen erneuten Nachweis, oder um sie über den Status
+    // "offen" wieder freizugeben.
+    const ids = [...selected];
+    const billed = ids.filter((id) => loaded.get(id)?.billed).length;
+    if (!ids.length) return;
 
     await loadTree();
     let subprojectId = null;
@@ -799,8 +802,7 @@ async function batchEdit(root) {
     const node = document.createElement('div');
     node.innerHTML = html`
         <p class="muted">${t('batch.intro')}</p>
-        ${billed ? html`<p class="outscope__warn">
-            ${billed === 1 ? t('batch.billedSkippedOne') : t('batch.billedSkipped', { count: billed })}</p>` : ''}
+        <p class="outscope__warn" data-billed-hint hidden></p>
         <div class="field">
             <span class="field__label">${t('batch.moveTo')}</span>
             <div class="batch__pick">
@@ -822,14 +824,25 @@ async function batchEdit(root) {
                 <input class="input" type="number" name="rate" step="0.01" min="0" disabled>
             </label>
         </div>
-        <label class="field">
-            <span class="field__label">${t('batch.billable')}</span>
-            <select class="input" name="billable">
-                <option value="">${t('batch.keep')}</option>
-                <option value="1">${t('batch.billableYes')}</option>
-                <option value="0">${t('batch.billableNo')}</option>
-            </select>
-        </label>`;
+        <div class="filters__row">
+            <label class="field field--inline field--grow">
+                <span class="field__label">${t('batch.billable')}</span>
+                <select class="input" name="billable">
+                    <option value="">${t('batch.keep')}</option>
+                    <option value="1">${t('batch.billableYes')}</option>
+                    <option value="0">${t('batch.billableNo')}</option>
+                </select>
+            </label>
+            <label class="field field--inline field--grow">
+                <span class="field__label">${t('batch.status')}</span>
+                <select class="input" name="billed">
+                    <option value="">${t('batch.keep')}</option>
+                    <option value="0">${t('common.billedOpen')}</option>
+                    <option value="1">${t('common.billedDone')}</option>
+                </select>
+            </label>
+        </div>
+        <p class="muted" data-lock-hint hidden>${t('batch.billLocks')}</p>`;
 
     const pick = node.querySelector('[data-pick]');
     const unpick = node.querySelector('[data-unpick]');
@@ -853,6 +866,23 @@ async function batchEdit(root) {
         if (!rate.disabled) rate.focus();
     });
 
+    // Was mit den abgerechneten Einträgen der Auswahl passiert, hängt am
+    // gewählten Status – der Hinweis zieht mit.
+    const status = node.querySelector('[name=billed]');
+    const billedHint = node.querySelector('[data-billed-hint]');
+    const lockHint = node.querySelector('[data-lock-hint]');
+    const showStatusHints = () => {
+        billedHint.hidden = billed === 0;
+        if (status.value === '0') {
+            billedHint.textContent = billed === 1 ? t('batch.billedReopenOne') : t('batch.billedReopen', { count: billed });
+        } else {
+            billedHint.textContent = billed === 1 ? t('batch.billedSkippedOne') : t('batch.billedSkipped', { count: billed });
+        }
+        lockHint.hidden = status.value !== '1';
+    };
+    status.addEventListener('change', showStatusHints);
+    showStatusHints();
+
     const result = await saveDialog({
         title: ids.length === 1 ? t('batch.titleOne') : t('batch.title', { count: ids.length }),
         body: node,
@@ -865,6 +895,7 @@ async function batchEdit(root) {
             if (node.querySelector('[name=billable]').value !== '') {
                 payload.billable = node.querySelector('[name=billable]').value === '1';
             }
+            if (status.value !== '') payload.billed = status.value === '1';
 
             if (Object.keys(payload).length === 1) throw new Error(t('batch.nothing'));
             return api.post('/entries/batch', payload);
@@ -873,7 +904,11 @@ async function batchEdit(root) {
     if (!result) return;
 
     const done = result.updated.length;
-    toast(done === 1 ? t('batch.doneOne') : t('batch.done', { count: done }), 'ok', 3000);
+    if (done || !result.unchanged?.length) {
+        toast(done === 1 ? t('batch.doneOne') : t('batch.done', { count: done }), 'ok', 3000);
+    } else {
+        toast(t('batch.noChange'), 'info', 3000);
+    }
     if (result.skipped.length) {
         toast(t('batch.skipped', { count: result.skipped.length }), 'info', 6000);
     }
@@ -936,6 +971,11 @@ async function editEntry(root, id, preset = null) {
 
     const node = document.createElement('div');
     node.innerHTML = html`
+        ${entry?.billed ? html`
+            <p class="outscope__warn" data-billed-note>
+                ${t('entries.billedAt', { date: formatDateTime(entry.billed_at) })} –
+                ${t('entries.billedLocked')}</p>` : ''}
+        <fieldset class="entryform__fields" data-fields>
         <div class="field">
             <span class="field__label">${t('common.subproject')}</span>
             <button type="button" class="input input--button" data-pick>${subprojectLabel}</button>
@@ -971,7 +1011,26 @@ async function editEntry(root, id, preset = null) {
                 <input type="checkbox" name="round" ${entry ? '' : 'checked'}>
                 <span>${t('entries.round')}</span>
             </label>
+        </div>
+        </fieldset>
+        <div class="filters__row">
+            <label class="field field--inline">
+                <span class="field__label">${t('batch.status')}</span>
+                <select class="input" name="billed">
+                    <option value="0" ${entry?.billed ? '' : 'selected'}>${t('common.billedOpen')}</option>
+                    <option value="1" ${entry?.billed ? 'selected' : ''}>${t('common.billedDone')}</option>
+                </select>
+            </label>
         </div>`;
+
+    // Abgerechnet heißt gesperrt: die Felder werden erst frei, wenn der
+    // Status wieder auf "offen" steht – so ist sichtbar, warum sich nichts
+    // ändern lässt, und das Wiederöffnen passiert im selben Dialog.
+    const status = node.querySelector('[name=billed]');
+    const fields = node.querySelector('[data-fields]');
+    const lockFields = () => { fields.disabled = Boolean(entry?.billed) && status.value === '1'; };
+    status.addEventListener('change', lockFields);
+    lockFields();
 
     node.querySelector('[data-pick]').addEventListener('click', async () => {
         const picked = await pickSubproject({ current: subprojectId });
@@ -1031,6 +1090,9 @@ async function editEntry(root, id, preset = null) {
         title: id ? t('entries.editTitle') : t('entries.add'),
         body: node,
         save: async () => {
+            // Bleibt abgerechnet: es gibt nichts zu speichern.
+            if (entry?.billed && status.value === '1') return 'unchanged';
+
             const date = get('date').value;
             // Endzeit vor Startzeit heißt: über Mitternacht hinaus.
             const endDate = get('end').value < get('start').value ? shiftDays(date, 1) : date;
@@ -1043,6 +1105,7 @@ async function editEntry(root, id, preset = null) {
                 billable: get('billable').checked,
                 round: get('round').checked,
                 rate: get('rate').value === '' ? null : Number(get('rate').value),
+                billed: status.value === '1',
             };
 
             if (id) {
@@ -1053,7 +1116,7 @@ async function editEntry(root, id, preset = null) {
             }
         },
     });
-    if (!saved) return;
+    if (!saved || saved === 'unchanged') return;
 
     if (overlaps) {
         toast(t('entries.overlapHint', { count: overlaps }), 'info', 6000);

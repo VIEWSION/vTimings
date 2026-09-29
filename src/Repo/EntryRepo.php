@@ -313,7 +313,7 @@ final class EntryRepo
      * @param array{
      *   subproject_id:int, started_at:int, ended_at:int,
      *   note?:string, rate?:float|null, billable?:bool, type?:string,
-     *   source?:string, round?:bool
+     *   source?:string, round?:bool, billed?:bool
      * } $data
      */
     public static function create(array $data): int
@@ -341,17 +341,55 @@ final class EntryRepo
             'type'          => $data['type'] ?? 'time',
             'billable'      => ($data['billable'] ?? true) ? 1 : 0,
             'source'        => $data['source'] ?? 'manual',
+            'billed_at'     => !empty($data['billed']) ? $now : null,
             'created_at'    => $now,
             'updated_at'    => $now,
         ]);
     }
 
-    /** @param array<string,mixed> $data */
+    /**
+     * Eintrag ändern. `billed` (true/false) setzt den Status: "offen" gibt
+     * einen abgerechneten Eintrag zuerst frei und wendet dann die übrigen
+     * Änderungen an; "abgerechnet" ändert zuerst und sperrt dann. Ohne
+     * Statuswechsel bleibt ein abgerechneter Eintrag gesperrt.
+     *
+     * @param array<string,mixed> $data
+     */
     public static function update(int $id, array $data): array
     {
         $entry = self::findOrFail($id);
-        self::assertEditable($entry);
 
+        $billed = array_key_exists('billed', $data) ? (bool) $data['billed'] : null;
+        unset($data['billed']);
+
+        if ($entry['billed']) {
+            if ($billed !== false) {
+                // Nur "bleibt abgerechnet" bestätigt – nichts zu tun.
+                if ($data === []) {
+                    return $entry;
+                }
+                self::assertEditable($entry);
+            }
+            if ($entry['invoice_id'] !== null) {
+                self::assertEditable($entry); // an einer Rechnung: nicht wieder öffnen
+            }
+            Database::update('entries', $id, ['billed_at' => null, 'updated_at' => Clock::now()]);
+            $entry = self::findOrFail($id);
+        }
+
+        $entry = self::applyChanges($id, $entry, $data);
+
+        if ($billed === true) {
+            Database::update('entries', $id, ['billed_at' => Clock::now(), 'updated_at' => Clock::now()]);
+            $entry = self::findOrFail($id);
+        }
+
+        return $entry;
+    }
+
+    /** Die eigentlichen Feldänderungen eines offenen Eintrags. */
+    private static function applyChanges(int $id, array $entry, array $data): array
+    {
         $fields = [];
 
         if (array_key_exists('subproject_id', $data)) {
@@ -405,19 +443,23 @@ final class EntryRepo
     }
 
     /**
-     * Mehrere Einträge in einem Zug ändern – Teilprojekt, Satz, abrechenbar.
+     * Mehrere Einträge in einem Zug ändern – Teilprojekt, Satz, abrechenbar,
+     * Status (offen/abgerechnet).
      *
      * Zeiten und Notizen gehören bewusst nicht dazu: die sind je Eintrag
      * verschieden, ein gemeinsamer Wert wäre fast immer ein Versehen. Jeder
-     * Eintrag läuft durch update(), damit Satzvererbung und Betrag genauso
-     * entstehen wie beim einzelnen Bearbeiten. Abgerechnete und gelöschte
-     * Einträge werden übersprungen statt den ganzen Vorgang abzubrechen.
+     * Eintrag läuft durch update() – Satzvererbung, Betrag und die Regeln
+     * zum Status (siehe dort) sind also dieselben wie beim einzelnen
+     * Bearbeiten. Was update() ablehnen würde (abgerechnet ohne Wechsel auf
+     * "offen", an einer Rechnung), wird übersprungen statt den ganzen
+     * Vorgang abzubrechen.
      *
      * @param list<int> $ids
      * @param array{subproject_id?:int, rate?:float|null, billable?:bool} $data
-     * @return array{updated:list<int>, skipped:list<array{id:int, reason:string}>}
+     * @param bool|null $billed true = abrechnen, false = wieder öffnen, null = unverändert
+     * @return array{updated:list<int>, unchanged:list<int>, skipped:list<array{id:int, reason:string}>}
      */
-    public static function batchUpdate(array $ids, array $data): array
+    public static function batchUpdate(array $ids, array $data, ?bool $billed = null): array
     {
         if (array_key_exists('subproject_id', $data)) {
             // Einmal vorab, damit ein unbekanntes Ziel nicht erst mitten im
@@ -425,25 +467,43 @@ final class EntryRepo
             SubprojectRepo::findOrFail((int) $data['subproject_id']);
         }
 
-        return Database::transaction(static function () use ($ids, $data): array {
+        return Database::transaction(static function () use ($ids, $data, $billed): array {
             $updated = [];
+            $unchanged = [];
             $skipped = [];
 
             foreach (array_values(array_unique($ids)) as $id) {
                 $entry = self::find($id);
                 if ($entry === null) {
                     $skipped[] = ['id' => $id, 'reason' => 'not_found'];
-                } elseif ($entry['deleted_at'] !== null) {
-                    $skipped[] = ['id' => $id, 'reason' => 'trashed'];
-                } elseif ($entry['billed']) {
-                    $skipped[] = ['id' => $id, 'reason' => 'billed'];
-                } else {
-                    self::update($id, $data);
-                    $updated[] = $id;
+                    continue;
                 }
+                if ($entry['deleted_at'] !== null) {
+                    $skipped[] = ['id' => $id, 'reason' => 'trashed'];
+                    continue;
+                }
+
+                // Was update() ablehnen würde, hier überspringen statt den
+                // ganzen Vorgang abzubrechen.
+                $stays = $entry['billed'] && $billed !== false;
+                if ($stays && $data !== []) {
+                    $skipped[] = ['id' => $id, 'reason' => 'billed'];
+                    continue;
+                }
+                if ($entry['billed'] && $billed === false && $entry['invoice_id'] !== null) {
+                    $skipped[] = ['id' => $id, 'reason' => 'invoiced'];
+                    continue;
+                }
+                if ($data === [] && $billed === $entry['billed']) {
+                    $unchanged[] = $id; // Status stimmte schon
+                    continue;
+                }
+
+                self::update($id, $billed === null ? $data : $data + ['billed' => $billed]);
+                $updated[] = $id;
             }
 
-            return ['updated' => $updated, 'skipped' => $skipped];
+            return ['updated' => $updated, 'unchanged' => $unchanged, 'skipped' => $skipped];
         });
     }
 
@@ -623,7 +683,9 @@ final class EntryRepo
     {
         if ($entry['billed_at'] !== null) {
             throw HttpException::conflict(
-                'Der Eintrag ist mit Rechnung ' . ($entry['invoice_number'] ?? '—') . ' abgerechnet und gesperrt.',
+                $entry['invoice_number'] !== null
+                    ? 'Der Eintrag ist mit Rechnung ' . $entry['invoice_number'] . ' abgerechnet und gesperrt.'
+                    : 'Der Eintrag ist abgerechnet und gesperrt. Zum Ändern den Status wieder auf „offen“ setzen.',
                 ['invoice_id' => $entry['invoice_id'], 'invoice_number' => $entry['invoice_number']]
             );
         }

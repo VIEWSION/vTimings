@@ -60,6 +60,12 @@ stattdessen eine Funktion, siehe `ADMIN_NAV()` in `app.js` und
 `groupLabel()` in `views/output.js`. Wo die gewählte Sprache gespeichert wird,
 steht im README-Abschnitt „Sprache“.
 
+**Auswahl von Kunde/Projekt/Teilprojekt:** `<select data-combo>` plus
+`data-color` an jeder `<option>`, danach `enhanceCombos(root)` aus
+`assets/js/combo.js`. Das native `<select>` bleibt die Quelle für den Wert
+(FormData, `.value`, `change`); neu befüllte Optionen und `disabled` zieht
+der Aufsatz selbst nach. Keine eigene Dropdown-Logik in Views.
+
 **Abstände:** Ein Container, in den mehrere `.card` gerendert werden (z. B.
 `#results` in `entries.js`), bekommt die Klasse `stack` – sonst liegen die
 Karten ohne Abstand aneinander. Keine Einzel-Margins an Karten.
@@ -89,8 +95,16 @@ sie sich beziehen, und warnen bei aktiver Suche bzw. fehlendem Kunden.
 Nur für Administratoren.
 
 **Sammelbearbeiten** (`POST /api/entries/batch`) ändert bewusst nur
-Teilprojekt, Stundensatz und „abrechenbar“ – Zeiten, Dauer und Notizen
-lehnt der Server dort ab. Das ist eine Anforderung, keine Lücke.
+Teilprojekt, Stundensatz, „abrechenbar“ und den Status offen/abgerechnet –
+Zeiten, Dauer und Notizen lehnt der Server dort ab. Das ist eine Anforderung,
+keine Lücke.
+
+**Status offen/abgerechnet** (`billed_at`) regelt allein
+`EntryRepo::update()` über den Schlüssel `billed`: „offen“ gibt frei und
+ändert dann, „abgerechnet“ ändert und sperrt dann, ohne Wechsel bleibt ein
+abgerechneter Eintrag gesperrt (409). Einzelbearbeitung und
+`batchUpdate()` laufen beide darüber – Statuslogik nicht an zweiter Stelle
+nachbauen. Die Tabelle `invoices` wird noch nicht benutzt.
 
 ## Backend-Konventionen
 

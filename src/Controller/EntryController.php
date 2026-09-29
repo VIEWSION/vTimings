@@ -67,6 +67,7 @@ final class EntryController
         $billable = $v->bool('billable', true);
         $round = $v->bool('round', true);
         $rate = $v->has('rate') ? $v->float('rate', false, 0, 100000) : null;
+        $billed = $v->bool('billed', false);
 
         if ($end === null && $durationMin === null) {
             $v->fail('ended_at', 'Ende oder Dauer angeben.');
@@ -84,6 +85,7 @@ final class EntryController
             'billable'      => (bool) $billable,
             'round'         => (bool) $round,
             'rate'          => $rate,
+            'billed'        => (bool) $billed,
             'source'        => 'manual',
         ]);
 
@@ -132,6 +134,9 @@ final class EntryController
         if ($v->has('round')) {
             $data['round'] = $v->bool('round', false);
         }
+        if ($v->has('billed')) {
+            $data['billed'] = $v->bool('billed', false);
+        }
         $v->validate();
 
         if ($data === []) {
@@ -144,12 +149,13 @@ final class EntryController
     /**
      * Sammelbearbeitung. `rate_mode`: keep = Satz behalten, inherit = aus
      * der Stammdaten-Hierarchie (ggf. des neuen Teilprojekts) übernehmen,
-     * fixed = `rate` für alle setzen.
+     * fixed = `rate` für alle setzen. `billed`: true = abrechnen,
+     * false = wieder öffnen.
      */
     public static function batch(Request $req): array
     {
         // Nur was sich sinnvoll für viele Einträge gleichzeitig setzen lässt.
-        $allowed = ['ids', 'subproject_id', 'rate_mode', 'rate', 'billable'];
+        $allowed = ['ids', 'subproject_id', 'rate_mode', 'rate', 'billable', 'billed'];
         $unknown = array_diff(array_keys($req->body), $allowed);
         if ($unknown !== []) {
             throw HttpException::badRequest(
@@ -178,13 +184,15 @@ final class EntryController
         if ($v->has('billable')) {
             $data['billable'] = $v->bool('billable', true);
         }
+        // Status: true = abgerechnet, false = offen, fehlt = unverändert.
+        $billed = $v->has('billed') ? $v->bool('billed', null) : null;
         $v->validate();
 
-        if ($data === []) {
+        if ($data === [] && $billed === null) {
             throw HttpException::badRequest('Keine Änderungen übergeben.');
         }
 
-        return EntryRepo::batchUpdate(array_map('intval', $ids), $data);
+        return EntryRepo::batchUpdate(array_map('intval', $ids), $data, $billed);
     }
 
     public static function destroy(Request $req): array

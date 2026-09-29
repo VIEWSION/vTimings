@@ -11,8 +11,8 @@
 
 import { t } from '../i18n.js';
 import {
-    dateRange, dayMonth, endOfMonth, formatDate, html, monthYear, shiftDays, startOfMonth,
-    startOfWeek, toISODate, todayISO, weekdayShort,
+    dateRange, dayMonth, endOfMonth, formatDate, formatDateTime, html, monthYear, raw, shiftDays,
+    startOfMonth, startOfWeek, toISODate, todayISO, weekdayShort,
 } from '../util.js';
 
 export const SCALES = ['day', 'week', 'month'];
@@ -277,7 +277,7 @@ function eventBlock(segment, editable) {
                        --c:${entry.color || 'var(--accent)'}"
                 title="${eventTitle(entry)}"
                 ${openAttr(entry, editable)}>
-            <span class="cal__time">${entry.start_time}–${entry.end_time}</span>
+            <span class="cal__time">${billedMark(entry)}${entry.start_time}–${entry.end_time}</span>
             <span class="cal__name">${entry.subproject_name}</span>
             ${minutes >= 75
                 ? html`<span class="cal__sub">${entry.client_name} · ${entry.project_name}</span>` : ''}
@@ -298,7 +298,31 @@ function openAttr(entry, editable) {
 
 function eventTitle(entry) {
     const head = `${entry.start_time}–${entry.end_time} · ${entry.hhmm} · ${entry.path}`;
-    return entry.note ? `${head}\n${entry.note}` : head;
+    const lines = [head];
+    if (entry.billed) lines.push(billedLabel(entry));
+    if (entry.note) lines.push(entry.note);
+    return lines.join('\n');
+}
+
+/** "abgerechnet am …" – mit Rechnungsnummer, sofern es eine gibt. */
+export function billedLabel(entry) {
+    const label = t('entries.billedAt', { date: formatDateTime(entry.billed_at) });
+    return entry.invoice_number ? `${label} · ${t('entries.invoice', { number: entry.invoice_number })}` : label;
+}
+
+/**
+ * Status als kleines Symbol: Häkchen = abgerechnet. Mit `open: true` bekommt
+ * ein offener Eintrag einen dezenten leeren Kreis gleicher Größe – so hat
+ * jede Zeile der Liste ein Symbol und das Layout bleibt in den Proportionen
+ * gleich. Der Kalender zeigt nur das Häkchen, dort ist der Platz knapp.
+ */
+export function billedMark(entry, { open = false } = {}) {
+    if (!entry.billed) {
+        return open ? html`<span class="billed-mark billed-mark--open" role="img"
+                title="${t('entries.statusOpen')}" aria-label="${t('entries.statusOpen')}"></span>` : '';
+    }
+    return html`<span class="billed-mark" title="${billedLabel(entry)}" role="img"
+            aria-label="${billedLabel(entry)}">${raw('<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>')}</span>`;
 }
 
 /** Monat: eine Zelle je Kalendertag, darin die Einträge als kurze Streifen. */
@@ -353,7 +377,7 @@ function chip(segment, editable) {
                     style="--c:${entry.color || 'var(--accent)'}"
                     title="${eventTitle(entry)}"
                     ${openAttr(entry, editable)}>
-                <span class="cal__chiptime">${segment.continued ? '00:00' : entry.start_time}</span>
+                <span class="cal__chiptime">${billedMark(entry)}${segment.continued ? '00:00' : entry.start_time}</span>
                 <span class="cal__chipname">${entry.subproject_name}</span>
             </button>
         </li>`;

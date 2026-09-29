@@ -259,9 +259,15 @@ Ende vor Start, fehlende Notizen. Die Altdaten sind, wie sie sind.
 Kundennamen lassen sich beim Import zusammenführen:
 
 ```bash
-php bin/console.php import --file=Export.csv --alias="Fraas=Dr. Fraas,AM Etikettendruck=A.M. Etikettendruck"
+php bin/console.php import --file=Export.csv --alias="Meier=Dr. Meier,Muster Druck=Muster Druck GmbH"
 ```
 
 Stundensätze werden aus den Einträgen abgeleitet: der zuletzt tatsächlich
 verwendete Satz, je Kunde und je Projekt – letzteres nur, wenn er vom
 Kundensatz abweicht. Bereits gepflegte Sätze bleiben unangetastet.
+
+## Lizenz
+
+MIT – siehe [LICENSE](LICENSE). „Timings“ ist eine Software eines anderen
+Herstellers; vTimings ist ein unabhängiger Ersatz und liest lediglich deren
+CSV-Export.

@@ -154,17 +154,11 @@ Muster für eine Ersatzpalette.
 
 ## Testzugänge (lokal)
 
-```
-Admin:  info@viewsion.de / vTimings-dev-2026
-Kunde:  kunde@prophysio.test / portal-test-2026   (client_id=1, prophysio)
-```
-
-Beide nur für die lokale Entwicklungsumgebung unter `http://localhost/vTimings/`.
-Vor jedem Livegang laut README ändern/entfernen. Testkonten, die während
-einer Session zu Prüfzwecken angelegt werden, danach wieder löschen
-(`php bin/console.php user:list` zeigt alle Zugänge) – mehrfach sind
-Test-Accounts (`viewsion@me.com` u. ä.) liegen geblieben, weil das
-vergessen wurde.
+Zugangsdaten für die lokale Entwicklungsumgebung stehen in
+`CLAUDE.local.md` (nicht versioniert – das Repository ist öffentlich). Fehlt
+die Datei, einen Testzugang mit `php bin/console.php user:add` anlegen.
+Testkonten, die während einer Session zu Prüfzwecken angelegt werden,
+danach wieder löschen (`php bin/console.php user:list` zeigt alle Zugänge).
 
 ## Datenbestand
 

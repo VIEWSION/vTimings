@@ -16,6 +16,9 @@ data/*
 # steht, bekommt man kaum wieder heraus.
 Vorlagen/
 
+# Lokale Hinweise für Claude Code mit Zugangsdaten der Entwicklungsumgebung.
+CLAUDE.local.md
+
 # Editor und Werkzeuge
 .idea/
 .vscode/

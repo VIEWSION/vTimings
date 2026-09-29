@@ -206,7 +206,7 @@ switch ($command) {
             fail('--file= fehlt oder ist nicht lesbar.');
         }
 
-        // --alias="Fraas=Dr. Fraas" (mehrfach möglich, kommagetrennt)
+        // --alias="Meier=Dr. Meier" (mehrfach möglich, kommagetrennt)
         $aliases = [];
         foreach (explode(',', $options['alias'] ?? '') as $pair) {
             if (str_contains($pair, '=')) {

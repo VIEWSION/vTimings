@@ -39,7 +39,7 @@ final class TimingsCsvImporter
 
     /**
      * @param array{
-     *   aliases?: array<string,string>,   Kundennamen zusammenführen: "Fraas" => "Dr. Fraas"
+     *   aliases?: array<string,string>,   Kundennamen zusammenführen: "Meier" => "Dr. Meier"
      *   duplicates?: string,              'skip' (Vorgabe) | 'import'
      *   dry_run?: bool
      * } $options

@@ -12,6 +12,79 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.9.0] – 2026-09-29
+
+### Neu
+- Leistungsnachweis mit Zusammenfassung für die Rechnung: oben in der
+  Druckansicht stehen Bezeichnung (Zeitraum, Gesamtdauer, „Aufwand /
+  Effort“), Menge in Stunden und eine Beschreibung mit einer Zeile je Tag
+  und Teilprojekt – jeweils mit „Kopieren“-Knopf für die Buchhaltung. Die
+  Felder lassen sich vor dem Kopieren anpassen; gedruckt wird die
+  Zusammenfassung nicht.
+- Leistungsnachweis zweisprachig: Sprache „Deutsch / English“ im Dialog
+  setzt alle Beschriftungen deutsch mit englischer Übersetzung (Titel und
+  Spaltenköpfe zweizeilig, sonst „Kunde / Customer“). Zahlen und Daten
+  bleiben deutsch formatiert. Die Wahl wird wie die übrigen Optionen gemerkt.
+- Einträge: Schnellwahl „Zeitraum“ direkt vor Von/Bis – heute, diese und
+  letzte Woche, dieser und letzter Monat, dieses und letztes Quartal, dieses
+  und letztes Jahr, gesamt, dazu jedes Jahr mit Einträgen als ganzes Jahr.
+  Eigene Daten zeigen „Benutzerdefiniert“. Die angebotenen Jahre richten
+  sich nach den übrigen Filtern (z. B. nur Jahre, in denen der gewählte Kunde
+  Einträge hat).
+- Neues, monochromes App-Symbol: Stoppuhr mit offenem Ring, deren Zeiger ein
+  „v“ bilden. Das Favicon passt sich hellem und dunklem Browser an.
+- „Über vTimings“: Ein Klick auf den Namen oben links zeigt Version und
+  Kurzbeschreibung, für Administratoren außerdem Links zu Changelog,
+  Quellcode und Wünschen/Fehlern auf GitHub.
+
+### Geändert
+- Der vorgeschlagene PDF-Dateiname des Leistungsnachweises beginnt mit
+  „AN_“, damit Buchhaltungen ihn automatisch zuordnen können.
+- Einträge: Alle sichtbaren Einträge wählt jetzt ein Kästchen in der
+  Summenzeile aus bzw. ab (teilweise Auswahl wird angezeigt). Die Knöpfe
+  „Alle sichtbaren auswählen“ und „Auswahl aufheben“ in der Auswahlleiste
+  entfallen, ebenso die Zeitraum-Chips unter den Filtern.
+
+### Behoben
+- Safari: Der Druckdialog des Leistungsnachweises verschwand nach etwa drei
+  Sekunden, danach war die Vorschau leer. Ursache: Ein per Skript
+  ausgelöster Druck hält in Safari den Webprozess an, den sich die Vorschau
+  mit dem vTimings-Tab teilt; Safari hielt diesen für abgestürzt und beendete
+  ihn. In Safari wird deshalb nur noch über ⌘P gedruckt (Hinweis statt Knopf
+  in der Leiste), andere Browser drucken weiter über den Knopf.
+
+## [1.8.0] – 2026-09-29
+
+### Neu
+- Darstellung wählbar: automatisch (folgt dem System), hell oder dunkel –
+  Symbol oben rechts neben dem Abmelden, schaltet reihum. Die Wahl gilt für
+  den Browser und greift schon beim Laden, ohne kurzes Aufblitzen.
+- Dialoge legen einen abgedunkelten, weichgezeichneten Schleier über den
+  Hintergrund und erscheinen mit einer kurzen Animation (mobil als Blatt von
+  unten; bei „Bewegung reduzieren“ ohne).
+- Ein Klick auf einen Eintrag öffnet ihn zum Bearbeiten (auch per Enter);
+  die Stift- und Papierkorb-Symbole in der Liste entfallen. Gelöscht wird im
+  Bearbeiten-Dialog über das Papierkorb-Symbol links unten, mit Rückfrage.
+- Einheitliche, schlichte Liniensymbole überall (Tabbar, Stammdaten,
+  Zugänge, Timer, Zeitschritte) statt Schriftzeichen wie ✎ 🗑 ▶.
+
+### Geändert
+- Dialoge ohne „Abbrechen“-Button – geschlossen wird über das ✕ oben, Esc
+  oder einen Klick daneben. Speichern/Übernehmen ist ein Häkchen,
+  Herunterladen und Öffnen haben eigene Symbole; die Beschriftung steht im
+  Tooltip. Bei zwei übereinanderliegenden Dialogen schließt Esc nur den
+  oberen.
+- Überarbeitetes Erscheinungsbild: ruhigere Farben in hell und dunkel,
+  einheitlicher Fokusring, Eingabefelder und Auswahllisten mit gleichem Pfeil
+  wie die Kunden-/Projektauswahl, Buttons mit Hover- und Klickzustand,
+  gestaltete Dateiauswahl, Tabellenköpfe abgesetzt, Kopfzeile und Tabbar
+  durchscheinend.
+
+### Behoben
+- Zu wenig Abstand über den Feldbeschriftungen in Dialogen (u. a. Eintrag
+  bearbeiten, Sammelbearbeiten, Leistungsnachweis): die Beschriftung klebte
+  am Feld darüber.
+
 ## [1.7.0] – 2026-09-29
 
 ### Neu

@@ -5,6 +5,7 @@ import { state, loadTree } from '../store.js';
 import { t } from '../i18n.js';
 import { enhanceCombos } from '../combo.js';
 import { confirmDialog, dialog, saveDialog, toast, toastError } from '../ui.js';
+import { icon } from '../icons.js';
 import { esc, formatDateTime, html } from '../util.js';
 
 /** Vom Server erzwungene Mindestlänge – siehe UserRepo::MIN_PASSWORD. */
@@ -48,11 +49,11 @@ export async function renderUsers(host) {
                                 ? formatDateTime(user.last_login_at)
                                 : t('common.never')}</td>
                             <td class="num">
-                                <button class="icon-btn" data-edit-user="${user.id}" title="${t('common.edit')}">✎</button>
+                                <button class="icon-btn" data-edit-user="${user.id}" title="${t('common.edit')}" aria-label="${t('common.edit')}">${icon('edit')}</button>
                                 ${user.id === state.user?.id
                                     ? ''
                                     : html`<button class="icon-btn" data-delete-user="${user.id}"
-                                        title="${t('common.delete')}">🗑</button>`}
+                                        title="${t('common.delete')}" aria-label="${t('common.delete')}">${icon('trash')}</button>`}
                             </td>
                         </tr>`)}
                 </tbody>
@@ -80,7 +81,7 @@ export async function renderUsers(host) {
                                     ? formatDateTime(token.last_used_at) : t('common.never')}</td>
                                 <td class="num">
                                     <button class="icon-btn" data-revoke="${token.id}"
-                                        title="${t('tokens.revoke')}">🗑</button>
+                                        title="${t('tokens.revoke')}" aria-label="${t('tokens.revoke')}">${icon('trash')}</button>
                                 </td>
                             </tr>`)}
                     </tbody>
@@ -235,7 +236,7 @@ async function createToken(host) {
         body: html`
             <p>${data.hint}</p>
             <pre><code>${data.token}</code></pre>`,
-        buttons: [{ label: t('common.understood'), value: 'ok', kind: 'primary' }],
+        buttons: [{ label: t('common.understood'), value: 'ok', kind: 'primary', icon: 'check' }],
     });
 
     await renderUsers(host);

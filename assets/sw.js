@@ -17,8 +17,10 @@ const SHELL = [
     BASE + 'assets/js/api.js',
     BASE + 'assets/js/combo.js',
     BASE + 'assets/js/i18n.js',
+    BASE + 'assets/js/icons.js',
     BASE + 'assets/js/prefs.js',
     BASE + 'assets/js/store.js',
+    BASE + 'assets/js/theme.js',
     BASE + 'assets/js/ui.js',
     BASE + 'assets/js/util.js',
     BASE + 'assets/js/views/timer.js',
@@ -30,6 +32,7 @@ const SHELL = [
     BASE + 'assets/js/views/users.js',
     BASE + 'assets/js/views/portal.js',
     BASE + 'assets/icons/icon.svg',
+    BASE + 'assets/icons/favicon.svg',
 ];
 
 self.addEventListener('install', (event) => {

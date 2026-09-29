@@ -6,6 +6,7 @@ import { state, loadTree, invalidateTree } from '../store.js';
 import { LANGS, t } from '../i18n.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
+import { icon } from '../icons.js';
 import { esc, html, money } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
@@ -127,9 +128,9 @@ function draw(root) {
 function columnHead(title, backLabel, addLabel, addAttr) {
     return html`
         <header class="column__head">
-            ${backLabel ? html`<button class="icon-btn column__back" data-back>‹</button>` : ''}
+            ${backLabel ? html`<button class="icon-btn column__back" data-back aria-label="${backLabel}" title="${backLabel}">${icon('back', 20)}</button>` : ''}
             <h3>${title}</h3>
-            <button class="icon-btn" ${{ __raw: addAttr }} title="${addLabel}">＋</button>
+            <button class="icon-btn" ${{ __raw: addAttr }} title="${addLabel}" aria-label="${addLabel}">${icon('plus')}</button>
         </header>`;
 }
 
@@ -233,8 +234,8 @@ function drawSubprojects(root) {
                         </span>
                         <span class="row__meta">${sub.effective_rate} €</span>
                         <span class="row__actions">
-                            <button class="icon-btn" data-edit-subproject="${sub.id}" title="${t('common.edit')}">✎</button>
-                            <button class="icon-btn" data-delete-subproject="${sub.id}" title="${t('common.delete')}">🗑</button>
+                            <button class="icon-btn" data-edit-subproject="${sub.id}" title="${t('common.edit')}" aria-label="${t('common.edit')}">${icon('edit')}</button>
+                            <button class="icon-btn" data-delete-subproject="${sub.id}" title="${t('common.delete')}" aria-label="${t('common.delete')}">${icon('trash')}</button>
                         </span>
                     </span>
                 </li>`)}

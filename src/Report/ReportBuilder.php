@@ -24,7 +24,7 @@ final class ReportBuilder
         'times'       => false,  // Uhrzeiten statt nur Dauer
         'notes'       => true,   // Notizen ausgeben
         'logo'        => true,   // Briefkopf
-        'lang'        => null,   // null = Sprache des Kunden
+        'lang'        => null,   // de, en, de-en; null = Sprache des Kunden
     ];
 
     /**
@@ -57,7 +57,7 @@ final class ReportBuilder
         }
 
         $lang = $options['lang'] ?? ($client['lang'] ?? 'de');
-        $lang = in_array($lang, ['de', 'en'], true) ? $lang : 'de';
+        $lang = in_array($lang, Translator::LANGS, true) ? $lang : 'de';
 
         $rows = $options['group_days']
             ? self::groupByDay($entries, count($projectIds) > 1)
@@ -68,6 +68,14 @@ final class ReportBuilder
 
         $firstStart = (int) Clock::fromIso($entries[0]['started_at']);
         $lastStart = (int) Clock::fromIso($entries[count($entries) - 1]['started_at']);
+
+        $summary = self::summary(
+            self::groupByDay($entries, count($projectIds) > 1),
+            Clock::format($firstStart, 'd.m.Y'),
+            Clock::format($lastStart, 'd.m.Y'),
+            $minutes,
+            new Translator($lang)
+        );
 
         return [
             'client'   => $client,
@@ -92,6 +100,7 @@ final class ReportBuilder
                 'amount'  => $amount === null ? null : round($amount, 2),
                 'rates'   => $showCosts ? array_values(array_unique(array_column($entries, 'rate'))) : [],
             ],
+            'summary'  => $summary,
             'issuer'   => self::issuer(),
             'meta'     => [
                 'generated_at' => Clock::iso(Clock::now()),
@@ -176,6 +185,29 @@ final class ReportBuilder
             unset($group['notes']);
             return $group;
         }, array_values($groups));
+    }
+
+    /**
+     * Kurzfassung für die Rechnungsposition (zum Kopieren in die
+     * Buchhaltung): eine Bezeichnung mit Zeitraum und Gesamtdauer, die Menge
+     * in Stunden und je Tag und Teilprojekt eine Zeile.
+     *
+     * Die Menge steht immer mit Dezimalkomma und ohne Tausenderpunkt – sie
+     * landet in einer deutschen Buchhaltung, unabhängig von der Sprache des
+     * Nachweises.
+     *
+     * @param list<array<string,mixed>> $days Ergebnis von groupByDay()
+     */
+    private static function summary(array $days, string $from, string $to, int $minutes, Translator $t): array
+    {
+        return [
+            'label'    => sprintf('%s - %s %s - %s', $from, $to, Clock::hhmm($minutes), $t('summary_effort')),
+            'quantity' => number_format(Clock::decimal($minutes), 2, ',', ''),
+            'lines'    => implode("\n", array_map(
+                static fn(array $day) => sprintf('%s - %s - %s', $day['date_label'], $day['hhmm'], $day['title']),
+                $days
+            )),
+        ];
     }
 
     /** Absenderdaten aus den Einstellungen. */

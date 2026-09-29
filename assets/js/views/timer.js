@@ -4,6 +4,7 @@ import { api, ApiError } from '../api.js';
 import { state, loadTimers, loadRecent, invalidateTree } from '../store.js';
 import { t } from '../i18n.js';
 import { bindOnce, dialog, pickSubproject, toast, toastError, confirmDialog } from '../ui.js';
+import { icon } from '../icons.js';
 import { clock, hhmm, html, money, todayISO, dayLabel, localISO } from '../util.js';
 
 let ticker = null;
@@ -61,7 +62,7 @@ function quickItem(sub) {
                     <strong>${sub.name}</strong>
                     <span class="muted">${sub.client_name} · ${sub.project_name}</span>
                 </span>
-                <span class="quick__go" aria-hidden="true">▶</span>
+                <span class="quick__go" aria-hidden="true">${icon('play', 16)}</span>
             </button>
         </li>`;
 }
@@ -99,7 +100,7 @@ function drawRunning(root) {
                     <strong>${timer.subproject_name}</strong>
                     <span class="muted">${timer.client_name} · ${timer.project_name}</span>
                 </span>
-                <button class="icon-btn" data-edit-timer="${timer.id}" title="${t('timer.edit')}">✎</button>
+                <button class="icon-btn" data-edit-timer="${timer.id}" title="${t('timer.edit')}" aria-label="${t('timer.edit')}">${icon('edit')}</button>
             </div>
             <div class="running__clock" data-since="${timer.started_at}">${clock(timer.elapsed_sec)}</div>
             <div class="running__meta muted">
@@ -155,7 +156,6 @@ async function startTimer(root, subprojectId, onConflict) {
                     </span></p>
                     <p>${t('timer.conflictQuestion')}</p>`,
                 buttons: [
-                    { label: t('common.cancel'), value: null },
                     { label: t('timer.conflictParallel'), value: 'parallel' },
                     { label: t('timer.conflictReplace'), value: 'stop', kind: 'primary' },
                 ],
@@ -183,8 +183,7 @@ async function stopTimer(root, id) {
         title: t('timer.stopTitle'),
         body: node,
         buttons: [
-            { label: t('timer.keepRunning'), value: null },
-            { label: t('timer.stop'), value: 'stop', kind: 'primary' },
+            { label: t('timer.stop'), value: 'stop', kind: 'primary', icon: 'check' },
         ],
     });
     if (result !== 'stop') return;
@@ -247,8 +246,7 @@ async function editTimer(root, id) {
         title: t('timer.adjustTitle'),
         body: node,
         buttons: [
-            { label: t('common.cancel'), value: null },
-            { label: t('common.save'), value: 'save', kind: 'primary' },
+            { label: t('common.save'), value: 'save', kind: 'primary', icon: 'check' },
         ],
     });
     if (result !== 'save') return;

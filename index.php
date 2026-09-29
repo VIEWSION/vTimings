@@ -32,14 +32,18 @@ header('Referrer-Policy: same-origin');
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1c1c22" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#18181d" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="vTimings">
 <title><?= $e((string) Config::get('app_name')) ?></title>
 <link rel="manifest" href="<?= $e($base) ?>/assets/manifest.webmanifest">
-<link rel="icon" href="<?= $e($base) ?>/assets/icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="<?= $e($base) ?>/assets/icons/icon-180.png">
+<link rel="icon" href="<?= $e($base) ?>/assets/icons/favicon.svg?v=<?= $version ?>" type="image/svg+xml">
+<link rel="apple-touch-icon" href="<?= $e($base) ?>/assets/icons/icon-180.png?v=<?= $version ?>">
 <link rel="stylesheet" href="<?= $e($base) ?>/assets/css/app.css?v=<?= $version ?>">
+<script>
+// Gewählte Darstellung vor dem ersten Zeichnen setzen (siehe assets/js/theme.js).
+try { var vtTheme = localStorage.getItem('vt.theme'); if (vtTheme === 'light' || vtTheme === 'dark') document.documentElement.dataset.theme = vtTheme; } catch (e) {}
+</script>
 </head>
 <body>
 <div id="app">

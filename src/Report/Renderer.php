@@ -8,9 +8,11 @@ use VT\Http\HttpException;
 /**
  * Rendert eine Vorlage aus templates/report/<name>/report.php.
  *
- * Die Vorlage bekommt $report (Anzeigemodell), $t (Übersetzer) und
- * $css (Inhalt der print.css, wird eingebettet – so bleibt der Ausdruck
- * auch bei "Seite speichern" vollständig).
+ * Die Vorlage bekommt $report (Anzeigemodell), $t (Übersetzer in der
+ * Sprache des Nachweises), $ui (Übersetzer in der Sprache der Oberfläche,
+ * für Bedienelemente, die nicht gedruckt werden) und $css (Inhalt der
+ * print.css, wird eingebettet – so bleibt der Ausdruck auch bei "Seite
+ * speichern" vollständig).
  */
 final class Renderer
 {
@@ -36,7 +38,7 @@ final class Renderer
         return $out;
     }
 
-    public static function render(string $template, array $report): string
+    public static function render(string $template, array $report, ?string $uiLang = null): string
     {
         if (!preg_match('/^[a-z0-9_-]+$/', $template)) {
             throw HttpException::badRequest('Ungültiger Vorlagenname.');
@@ -50,12 +52,13 @@ final class Renderer
 
         $css = is_file($dir . '/print.css') ? (string) file_get_contents($dir . '/print.css') : '';
         $t = new Translator((string) ($report['lang'] ?? 'de'));
+        $ui = new Translator($uiLang ?? 'de');
 
         ob_start();
-        (static function (string $file, array $report, Translator $t, string $css): void {
+        (static function (string $file, array $report, Translator $t, Translator $ui, string $css): void {
             /** @noinspection PhpIncludeInspection */
             require $file;
-        })($file, $report, $t, $css);
+        })($file, $report, $t, $ui, $css);
 
         return (string) ob_get_clean();
     }

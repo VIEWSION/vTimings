@@ -5,8 +5,9 @@ import { api } from '../api.js';
 import { state, loadTree, loadSettings, invalidateTree, flatSubprojects } from '../store.js';
 import { t } from '../i18n.js';
 import { enhanceCombos } from '../combo.js';
+import { icon } from '../icons.js';
 import { loadPref, savePref } from '../prefs.js';
-import { bindOnce, confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
+import { bindOnce, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
     billedMark, calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
 } from './calendar.js';
@@ -32,6 +33,13 @@ const filters = {
 // Monatswechsel noch der alte Monat im Filter. Wer die Daten von Hand setzt,
 // hebt ihn auf.
 let range = null;
+
+// Jahre mit Einträgen (absteigend) für "ganze Jahre" in der Schnellwahl –
+// passend zu den übrigen Filtern (Kunde, Projekt, Suche …), aber unabhängig
+// vom Zeitraum. `yearsKey` merkt, für welche Filter sie geladen wurden.
+let years = [];
+let yearsKey = null;
+let yearsRequest = 0;
 
 let initialized = false;
 
@@ -81,7 +89,7 @@ function restore() {
     for (const key of Object.keys(filters)) {
         if (typeof saved.filters[key] === 'string') filters[key] = saved.filters[key];
     }
-    range = RANGES.includes(saved.range) ? saved.range : null;
+    range = isRange(saved.range) ? saved.range : null;
     if (range) Object.assign(filters, rangeDates(range));
     return true;
 }
@@ -132,6 +140,14 @@ export const entriesView = {
                     <div class="filters__row">
                         <span class="filters__dates">
                             <label class="field field--inline">
+                                <span class="field__label">${t('entries.range')}</span>
+                                <select class="input" name="range">
+                                    <option value="">${t('entries.rangeCustom')}</option>
+                                    ${RANGES.map((key) => html`<option value="${key}">${rangeLabel(key)}</option>`)}
+                                    ${yearsHtml()}
+                                </select>
+                            </label>
+                            <label class="field field--inline">
                                 <span class="field__label">${t('common.from')}</span>
                                 <input class="input" type="date" name="from" value="${filters.from}">
                             </label>
@@ -180,14 +196,6 @@ export const entriesView = {
                                         data-view="stats">${t('cal.viewStats')}</button>
                             </div>` : ''}
                         <div class="chips">
-                            <span class="filters__ranges">
-                                <button type="button" class="chip" data-range="today">${t('entries.rangeToday')}</button>
-                                <button type="button" class="chip" data-range="week">${t('entries.rangeWeek')}</button>
-                                <button type="button" class="chip" data-range="month">${t('entries.rangeMonth')}</button>
-                                <button type="button" class="chip" data-range="lastmonth">${t('entries.rangeLastMonth')}</button>
-                                <button type="button" class="chip" data-range="year">${t('entries.rangeYear')}</button>
-                                <button type="button" class="chip" data-range="all">${t('entries.rangeAll')}</button>
-                            </span>
                             <button type="button" class="chip" data-reset>${t('entries.resetFilters')}</button>
                         </div>
                         ${canEdit() ? html`
@@ -300,6 +308,15 @@ function bind(root) {
     };
 
     form.addEventListener('change', (event) => {
+        if (event.target.name === 'range') {
+            range = event.target.value || null;
+            // "Benutzerdefiniert" lässt die Daten stehen, wie sie sind.
+            if (range) {
+                const dates = rangeDates(range);
+                form.from.value = dates.from;
+                form.to.value = dates.to;
+            }
+        }
         read();
         if (event.target.name === 'from' || event.target.name === 'to') range = null;
         // Die Auswahl hängt zusammen: ein anderer Kunde ändert die Projekte,
@@ -326,22 +343,27 @@ function bind(root) {
             if (mode === 'calendar') applyCalendarRange(root);
             return refresh(root);
         }
-
-        const chip = event.target.closest('[data-range]');
-        if (!chip) return;
-        range = chip.dataset.range;
-        const dates = rangeDates(range);
-        form.from.value = dates.from;
-        form.to.value = dates.to;
-        update();
     });
 
     root.querySelector('#new-entry')?.addEventListener('click', () => editEntry(root, null));
 
     const results = root.querySelector('#results');
 
+    // Tastatur: Enter auf einem fokussierten Eintrag öffnet ihn.
+    bindOnce(results, 'EntriesOpenKey', 'keydown', (event) => {
+        if (event.key !== 'Enter' || !event.target.matches('.entry[data-edit]')) return;
+        event.preventDefault();
+        editEntry(root, Number(event.target.dataset.edit));
+    });
+
     // Häkchen einzeln oder für einen ganzen Tag.
     bindOnce(results, 'EntriesSelect', 'change', (event) => {
+        if (event.target.matches('[data-select-all]')) {
+            if (event.target.checked) for (const id of selectable) selected.add(id);
+            else selected.clear();
+            return syncSelection(root);
+        }
+
         const one = event.target.closest('[data-select]');
         const day = event.target.closest('[data-select-day]');
         if (!one && !day) return;
@@ -359,13 +381,7 @@ function bind(root) {
 
     bindOnce(root.querySelector('#batchbar'), 'EntriesBatch', 'click', (event) => {
         const action = event.target.closest('[data-batch]')?.dataset.batch;
-        if (action === 'all') {
-            for (const id of selectable) selected.add(id);
-            syncSelection(root);
-        } else if (action === 'clear') {
-            selected.clear();
-            syncSelection(root);
-        } else if (action === 'edit') {
+        if (action === 'edit') {
             batchEdit(root);
         } else if (action === 'report' || action === 'export') {
             openOutput(action, selectionScope());
@@ -373,8 +389,12 @@ function bind(root) {
     });
 
     results.addEventListener('click', async (event) => {
+        // Häkchen im Eintrag wählen aus, statt zu öffnen; markierter Text
+        // (Notiz kopieren) ebenso wenig.
         const edit = event.target.closest('[data-edit]');
-        if (edit) return editEntry(root, Number(edit.dataset.edit));
+        if (edit && !event.target.closest('.check') && !String(window.getSelection())) {
+            return editEntry(root, Number(edit.dataset.edit));
+        }
 
         if (mode === 'calendar' && onCalendarClick(root, event)) return;
 
@@ -383,17 +403,6 @@ function bind(root) {
             groupBy = group.dataset.group;
             storeView();
             return refresh(root);
-        }
-
-        const del = event.target.closest('[data-delete]');
-        if (del) {
-            if (!await confirmDialog(t('entries.deleteTitle'), t('entries.deleteText'))) return;
-            try {
-                await api.delete(`/entries/${del.dataset.delete}`);
-                invalidateTree();
-                await refresh(root);
-            } catch (error) { toastError(error); }
-            return;
         }
 
         const restore = event.target.closest('[data-restore]');
@@ -527,24 +536,105 @@ function resetFilters(form) {
     if (form.trashed) form.trashed.checked = false;
 }
 
-const RANGES = ['today', 'week', 'month', 'lastmonth', 'year', 'all'];
+// Reihenfolge = Reihenfolge in der Schnellwahl.
+const RANGES = [
+    'today', 'week', 'lastweek', 'month', 'lastmonth',
+    'quarter', 'lastquarter', 'year', 'lastyear', 'all',
+];
 
-/** Von/Bis eines Schnellzeitraums, gerechnet ab heute. */
+const RANGE_KEYS = {
+    today: 'rangeToday', week: 'rangeWeek', lastweek: 'rangeLastWeek',
+    month: 'rangeMonth', lastmonth: 'rangeLastMonth',
+    quarter: 'rangeQuarter', lastquarter: 'rangeLastQuarter',
+    year: 'rangeYear', lastyear: 'rangeLastYear', all: 'rangeAll',
+};
+
+/** Schnellzeitraum oder ganzes Jahr (`y2024`). */
+function isRange(key) {
+    return RANGES.includes(key) || (typeof key === 'string' && /^y\d{4}$/.test(key));
+}
+
+/**
+ * Gruppe "Ganze Jahre". Ein gewähltes Jahr bleibt auch dann in der Liste,
+ * wenn es zu den neuen Filtern keine Einträge hat – sonst spränge die
+ * Auswahl stillschweigend auf "Benutzerdefiniert".
+ */
+function yearsHtml() {
+    const chosen = /^y(\d{4})$/.exec(range ?? '')?.[1];
+    const list = chosen && !years.includes(chosen)
+        ? [...years, chosen].sort().reverse()
+        : years;
+    if (!list.length) return '';
+    return html`
+        <optgroup label="${t('entries.rangeYears')}">
+            ${list.map((year) => html`<option value="y${year}">${year}</option>`)}
+        </optgroup>`;
+}
+
+/** Jahre zu den aktuellen Filtern (ohne Zeitraum) laden und eintragen. */
+async function syncYears(root) {
+    const { from, to, ...rest } = queryFilters();
+    const key = JSON.stringify(rest);
+
+    if (key !== yearsKey) {
+        yearsKey = key;
+        // Nur die jüngste Antwort zählt, falls Filter schnell wechseln.
+        const ticket = ++yearsRequest;
+        let found = [];
+        try {
+            const data = await api.get('/stats', { ...rest, group_by: 'year' });
+            found = data.groups.map((group) => group.key).filter((y) => /^\d{4}$/.test(y)).sort().reverse();
+        } catch {
+            yearsKey = null; // beim nächsten Mal erneut versuchen
+        }
+        if (ticket !== yearsRequest) return;
+        years = found;
+    }
+
+    const select = root.querySelector('[name=range]');
+    if (!select) return;
+    select.querySelector('optgroup')?.remove();
+    select.insertAdjacentHTML('beforeend', String(yearsHtml()));
+    select.value = range ?? '';
+}
+
+function rangeLabel(key) {
+    return t('entries.' + RANGE_KEYS[key]);
+}
+
+/**
+ * Von/Bis eines Schnellzeitraums, gerechnet ab heute. Laufende Zeiträume
+ * (diese Woche, dieser Monat …) enden heute, abgeschlossene am letzten Tag.
+ */
 function rangeDates(key) {
     const today = todayISO();
+    const [y, m] = today.split('-').map(Number);
+    const iso = (year, month, day) =>
+        `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const lastDay = (year, month) => new Date(year, month, 0).getDate();
 
-    // "Gesamt" heißt: keine Datumsgrenzen – der Server liefert dann alles.
+    const year = /^y(\d{4})$/.exec(key ?? '');
+    if (year) return { from: `${year[1]}-01-01`, to: `${year[1]}-12-31` };
     if (key === 'today') return { from: today, to: today };
     if (key === 'week') return { from: startOfWeek(today), to: today };
+    if (key === 'lastweek') {
+        const monday = shiftDays(startOfWeek(today), -7);
+        return { from: monday, to: shiftDays(monday, 6) };
+    }
     if (key === 'month') return { from: startOfMonth(), to: today };
     if (key === 'lastmonth') {
-        const [y, m] = today.split('-').map(Number);
-        const prev = m === 1 ? [y - 1, 12] : [y, m - 1];
-        const last = new Date(prev[0], prev[1], 0).getDate();
-        const mm = String(prev[1]).padStart(2, '0');
-        return { from: `${prev[0]}-${mm}-01`, to: `${prev[0]}-${mm}-${last}` };
+        const [py, pm] = m === 1 ? [y - 1, 12] : [y, m - 1];
+        return { from: iso(py, pm, 1), to: iso(py, pm, lastDay(py, pm)) };
     }
-    if (key === 'year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
+    const qStart = m - ((m - 1) % 3); // erster Monat des Quartals
+    if (key === 'quarter') return { from: iso(y, qStart, 1), to: today };
+    if (key === 'lastquarter') {
+        const [py, pm] = qStart === 1 ? [y - 1, 10] : [y, qStart - 3];
+        return { from: iso(py, pm, 1), to: iso(py, pm + 2, lastDay(py, pm + 2)) };
+    }
+    if (key === 'year') return { from: iso(y, 1, 1), to: today };
+    if (key === 'lastyear') return { from: iso(y - 1, 1, 1), to: iso(y - 1, 12, 31) };
+    // "Gesamt" heißt: keine Datumsgrenzen – der Server liefert dann alles.
     return { from: '', to: '' };
 }
 
@@ -553,9 +643,9 @@ async function refresh(root) {
     host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 
     storeFilters();
-    for (const chip of root.querySelectorAll('[data-range]')) {
-        chip.classList.toggle('is-active', chip.dataset.range === range);
-    }
+    const rangeSelect = root.querySelector('[name=range]');
+    if (rangeSelect) rangeSelect.value = range ?? '';
+    syncYears(root);
     selectable = [];
     loaded.clear();
     lastTotals = null;
@@ -645,6 +735,12 @@ function syncSelection(root) {
         box.indeterminate = count > 0 && count < boxes.length;
     }
 
+    const all = root.querySelector('[data-select-all]');
+    if (all) {
+        all.checked = selectable.length > 0 && selected.size === selectable.length;
+        all.indeterminate = selected.size > 0 && selected.size < selectable.length;
+    }
+
     const bar = root.querySelector('#batchbar');
     if (!bar) return;
     bar.hidden = selected.size === 0;
@@ -653,9 +749,6 @@ function syncSelection(root) {
     bar.innerHTML = html`
         <span class="batchbar__info">
             <strong class="batchbar__count">${t('batch.selected', { count: selected.size })}</strong>
-            ${selected.size < selectable.length
-                ? html`<button type="button" class="chip" data-batch="all">${t('batch.selectAll')}</button>` : ''}
-            <button type="button" class="chip" data-batch="clear">${t('batch.clear')}</button>
         </span>
         <span class="batchbar__actions">
             <button type="button" class="btn" data-batch="report">${t('output.report')}</button>
@@ -714,8 +807,14 @@ async function openOutput(kind, scope) {
 }
 
 function summary(data) {
+    // In der Liste wählt das Kästchen alle sichtbaren Einträge aus bzw. ab –
+    // Zustand (ganz, teilweise, gar nicht) zieht syncSelection() nach.
     return html`
         <div class="summary card">
+            ${canSelect() && selectable.length ? html`
+                <label class="check" title="${t('batch.selectAll')}">
+                    <input type="checkbox" data-select-all aria-label="${t('batch.selectAll')}">
+                </label>` : ''}
             <span><strong>${data.totals.hhmm}</strong> <span class="muted">${t('common.hours')}</span></span>
             ${data.totals.amount !== undefined
                 ? html`<span><strong>${money(data.totals.amount)}</strong></span>` : ''}
@@ -746,8 +845,13 @@ function dayGroup(day) {
 function row(entry) {
     const check = canSelect();
 
+    // Ein Klick auf den Eintrag öffnet ihn zum Bearbeiten (Löschen steckt im
+    // Dialog). Im Papierkorb nicht – dort gibt es nur Wiederherstellen.
+    const open = canEdit() && !entry.deleted_at;
+
     return html`
-        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${check ? 'entry--check' : ''}">
+        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${check ? 'entry--check' : ''} ${open ? 'entry--open' : ''}"
+            ${open ? { __raw: `data-edit="${entry.id}" tabindex="0"` } : ''}>
             ${check ? html`
                 <label class="check entry__check" title="${t('batch.selectEntry')}">
                     <input type="checkbox" data-select="${entry.id}" aria-label="${t('batch.selectEntry')}">
@@ -770,13 +874,10 @@ function row(entry) {
                 ${entry.rate !== undefined ? html`<span class="muted entry__rate">
                     ${t('entries.perHour', { rate: money(entry.rate, entry.currency) })}</span>` : ''}
             </span>
-            ${canEdit() ? html`
+            ${canEdit() && entry.deleted_at ? html`
                 <span class="entry__actions">
-                    ${entry.deleted_at
-                        ? html`<button class="icon-btn" data-restore="${entry.id}" title="${t('common.restore')}">↩</button>`
-                        : html`
-                            <button class="icon-btn" data-edit="${entry.id}" title="${t('common.edit')}">✎</button>
-                            <button class="icon-btn" data-delete="${entry.id}" title="${t('common.delete')}">🗑</button>`}
+                    <button class="icon-btn" data-restore="${entry.id}"
+                        title="${t('common.restore')}" aria-label="${t('common.restore')}">${icon('restore')}</button>
                 </span>` : ''}
         </li>`;
 }
@@ -807,7 +908,8 @@ async function batchEdit(root) {
             <span class="field__label">${t('batch.moveTo')}</span>
             <div class="batch__pick">
                 <button type="button" class="input input--button" name="subproject_id" data-pick>${t('batch.keep')}</button>
-                <button type="button" class="icon-btn" data-unpick hidden title="${t('batch.keep')}">✕</button>
+                <button type="button" class="icon-btn" data-unpick hidden
+                    title="${t('batch.keep')}" aria-label="${t('batch.keep')}">${icon('close')}</button>
             </div>
         </div>
         <div class="filters__row">
@@ -942,9 +1044,9 @@ function timeField(name, label, value, grid) {
                     step="${grid * 60}" value="${value}">
                 <span class="timefield__steps">
                     <button type="button" class="timefield__step" data-step="${name}" data-dir="1"
-                        tabindex="-1" aria-label="${t('entries.stepUp', { minutes: grid })}">▲</button>
+                        tabindex="-1" aria-label="${t('entries.stepUp', { minutes: grid })}">${icon('up', 12)}</button>
                     <button type="button" class="timefield__step" data-step="${name}" data-dir="-1"
-                        tabindex="-1" aria-label="${t('entries.stepDown', { minutes: grid })}">▼</button>
+                        tabindex="-1" aria-label="${t('entries.stepDown', { minutes: grid })}">${icon('down', 12)}</button>
                 </span>
             </div>
         </div>`;
@@ -1089,6 +1191,8 @@ async function editEntry(root, id, preset = null) {
     const saved = await saveDialog({
         title: id ? t('entries.editTitle') : t('entries.add'),
         body: node,
+        remove: id ? () => api.delete(`/entries/${id}`) : null,
+        removeConfirm: { title: t('entries.deleteTitle'), text: t('entries.deleteText') },
         save: async () => {
             // Bleibt abgerechnet: es gibt nichts zu speichern.
             if (entry?.billed && status.value === '1') return 'unchanged';
@@ -1117,6 +1221,11 @@ async function editEntry(root, id, preset = null) {
         },
     });
     if (!saved || saved === 'unchanged') return;
+    if (saved === 'removed') {
+        invalidateTree();
+        toast(t('common.deleted'), 'ok', 2000);
+        return refresh(root);
+    }
 
     if (overlaps) {
         toast(t('entries.overlapHint', { count: overlaps }), 'info', 6000);

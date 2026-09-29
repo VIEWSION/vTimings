@@ -13,6 +13,7 @@
 // Benutzung: <select data-combo …> ins Markup, danach enhanceCombos(root).
 
 import { t } from './i18n.js';
+import { icon } from './icons.js';
 import { esc } from './util.js';
 
 /** Ab so vielen Einträgen erscheint das Suchfeld. */
@@ -133,7 +134,7 @@ function show(select, button, sync) {
             ? visible.map((o, i) => `
                 <li class="combo__item ${o.selected ? 'is-selected' : ''} ${i === active ? 'is-active' : ''}"
                     role="option" id="${listId}-${i}" data-index="${i}" aria-selected="${o.selected}">
-                    ${select.multiple ? `<span class="combo__check" aria-hidden="true">${o.selected ? '✓' : ''}</span>` : ''}
+                    ${select.multiple ? `<span class="combo__check" aria-hidden="true">${o.selected ? icon('check', 12) : ''}</span>` : ''}
                     ${dot(o.dataset.color || '')}
                     <span class="combo__text">${esc(o.textContent)}</span>
                 </li>`).join('')

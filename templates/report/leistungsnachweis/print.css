@@ -47,7 +47,10 @@ body {
 .head {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    /* Absender auf die Grundlinie des Logos; bei mehrzeiliger Adresse steht
+       deren letzte Zeile darauf und die übrigen wachsen nach oben. */
+    align-items: flex-end;
+    align-items: last baseline;
     gap: 12mm;
     padding-bottom: 4mm;
     border-bottom: 2px solid var(--rule-strong);
@@ -136,6 +139,12 @@ body {
 .col-rate { width: 20mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
 .col-sum  { width: 24mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
 
+/* Zahlenspalten auch im Kopf rechtsbündig – `.items thead th` setzt sonst
+   für alle Köpfe links (höhere Spezifität als die Spaltenklassen). */
+.items thead th.col-dur,
+.items thead th.col-rate,
+.items thead th.col-sum { text-align: right; }
+
 .overnight { font-size: 7pt; margin-left: 0.5mm; }
 
 .item__title { font-weight: 600; }
@@ -200,6 +209,101 @@ body {
 }
 .toolbar button.primary { background: var(--accent); border-color: var(--accent); }
 .toolbar .spacer { flex: 1; }
+.toolbar__hint { font-weight: 600; }
+.toolbar__hint kbd {
+    font: inherit;
+    display: inline-block;
+    min-width: 1.6em;
+    padding: 1px 5px;
+    margin-right: 2px;
+    text-align: center;
+    border: 1px solid #4a4a55;
+    border-radius: 4px;
+    background: #26262e;
+}
+
+/* -- Zweisprachig (Deutsch / English) ------------------------------------ */
+
+/* Englisch hinter dem Deutschen, zurückgenommen. In Überschriften und
+   Spaltenköpfen eine eigene Zeile, damit die Spalten nicht breiter werden. */
+.l-en { color: var(--ink-soft); font-weight: 400; }
+.l-en::before { content: " / "; }
+
+.title .l-en,
+.items thead .l-en,
+.totals__label .l-en,
+.listing__label .l-en { display: block; }
+
+.title .l-en::before,
+.items thead .l-en::before,
+.totals__label .l-en::before,
+.listing__label .l-en::before { content: none; }
+
+.title .l-en { font-size: 11pt; letter-spacing: 0; margin-top: 1mm; }
+.items thead .l-en { font-weight: 400; letter-spacing: 0.04em; }
+.items thead th { vertical-align: bottom; }
+.totals__label .l-en { font-size: 9pt; }
+
+/* -- Zusammenfassung für die Rechnung (nur Bildschirm) --------------------- */
+
+.summary {
+    width: 210mm;
+    max-width: calc(100% - 24px);
+    margin: 12mm auto -4mm;
+    padding: 4mm 6mm;
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 2px 14px rgb(0 0 0 / 12%);
+    font-size: 13px;
+}
+
+.summary > summary {
+    cursor: pointer;
+    font-weight: 700;
+    padding: 1mm 0;
+}
+
+.summary__hint { font-weight: 400; color: var(--ink-soft); margin-left: 6px; }
+
+.summary__row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.summary__field { display: flex; flex-direction: column; gap: 3px; color: var(--ink-soft); }
+.summary__field--grow { flex: 1; min-width: 0; }
+
+.summary input,
+.summary textarea {
+    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink);
+    padding: 5px 8px;
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: #fff;
+    width: 100%;
+}
+.summary textarea { resize: vertical; }
+.summary .summary__qty { width: 9em; text-align: right; }
+
+.summary button {
+    font: inherit;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--rule);
+    background: #f3f3f6;
+    color: var(--ink);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.summary button.is-done { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+@media (max-width: 700px) {
+    .summary__row { flex-wrap: wrap; }
+}
 
 @media print {
     /* Papier ist schon weiß. Beide Flächen durchsichtig lassen, statt Weiß
@@ -220,4 +324,5 @@ body {
        hat in WebKit aber schon eine eigene Kompositionsebene angelegt.
        Zurücksetzen, damit im Druck keine übrig bleibt. */
     .toolbar { display: none; position: static; }
+    .summary { display: none; }
 }

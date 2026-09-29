@@ -3,11 +3,15 @@
  * Leistungsnachweis – Standardvorlage.
  *
  * Verfügbar: $report (Anzeigemodell aus dem ReportBuilder),
- *            $t (Translator, aufrufbar als $t('key')),
+ *            $t (Translator: $t('key') als Klartext, $t->label('key') als
+ *                HTML – zweisprachig mit .l-de/.l-en),
+ *            $ui (Translator in der Sprache der Oberfläche, für
+ *                 Bedienelemente, die nicht gedruckt werden),
  *            $css (Inhalt von print.css).
  *
  * @var array                     $report
  * @var VT\Report\Translator      $t
+ * @var VT\Report\Translator      $ui
  * @var string                    $css
  */
 
@@ -19,33 +23,61 @@ $project = $report['project'];
 $issuer = $report['issuer'];
 $currency = $report['meta']['currency'];
 
-// Wird beim Drucken zum Vorschlag für den PDF-Dateinamen.
+// Wird beim Drucken zum Vorschlag für den PDF-Dateinamen. Das Präfix
+// "AN_" hat ein Kunde verlangt: dessen Buchhaltung erkennt Leistungsnachweise
+// automatisch daran – nicht entfernen.
 $documentTitle = sprintf(
-    '%s - %s - %s - %s–%s',
-    $t('title'),
+    'AN_%s - %s - %s - %s–%s',
+    $t->primary('title'),
     $client['name'] ?? '',
-    $project['name'] ?? $t('all_projects'),
+    $project['name'] ?? $t->primary('all_projects'),
     $report['period']['first_date'],
     $report['period']['last_date']
 );
 ?>
 <!doctype html>
-<html lang="<?= $e($t->lang()) ?>">
+<html lang="<?= $e($t->htmlLang()) ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= $e($documentTitle) ?></title>
+<link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
 <style><?= $css ?></style>
 </head>
 <body>
 
 <div class="toolbar">
-    <button class="primary" onclick="window.print()">Drucken / als PDF sichern</button>
+    <button class="primary" type="button" data-print><?= $e($ui('ui_print')) ?></button>
+    <span class="toolbar__hint" data-print-hint hidden><kbd>⌘</kbd><kbd>P</kbd> <?= $e($ui('ui_print')) ?></span>
     <span class="spacer"></span>
     <span><?= $e($report['totals']['hhmm']) ?> ·
         <?= $e($t->number($report['totals']['decimal'])) ?> h ·
-        <?= (int) $report['totals']['entries'] ?> <?= $e($t('entries')) ?></span>
+        <?= (int) $report['totals']['entries'] ?> <?= $e($ui('entries')) ?></span>
 </div>
+
+<?php $summary = $report['summary']; ?>
+<details class="summary" open>
+    <summary><?= $e($ui('ui_summary')) ?> <span class="summary__hint"><?= $e($ui('ui_not_printed')) ?></span></summary>
+    <div class="summary__row">
+        <label class="summary__field summary__field--grow">
+            <span><?= $e($ui('ui_label')) ?></span>
+            <input type="text" id="sum-label" value="<?= $e($summary['label']) ?>">
+        </label>
+        <button type="button" data-copy="sum-label"><?= $e($ui('ui_copy')) ?></button>
+        <label class="summary__field">
+            <span><?= $e($ui('ui_quantity')) ?></span>
+            <input type="text" id="sum-qty" class="summary__qty" value="<?= $e($summary['quantity']) ?>">
+        </label>
+        <button type="button" data-copy="sum-qty"><?= $e($ui('ui_copy')) ?></button>
+    </div>
+    <div class="summary__row">
+        <label class="summary__field summary__field--grow">
+            <span><?= $e($ui('ui_lines')) ?></span>
+            <textarea id="sum-lines" rows="<?= min(12, max(3, substr_count($summary['lines'], "\n") + 1)) ?>"><?= $e($summary['lines']) ?></textarea>
+        </label>
+        <button type="button" data-copy="sum-lines"><?= $e($ui('ui_copy')) ?></button>
+    </div>
+</details>
 
 <div class="sheet">
 
@@ -69,37 +101,37 @@ $documentTitle = sprintf(
         </header>
     <?php endif; ?>
 
-    <h1 class="title <?= $hasHead ? '' : 'title--top' ?>"><?= $e($t('title')) ?></h1>
+    <h1 class="title <?= $hasHead ? '' : 'title--top' ?>"><?= $t->label('title') ?></h1>
 
     <dl class="meta">
-        <dt><?= $e($t('customer')) ?></dt>
+        <dt><?= $t->label('customer') ?></dt>
         <dd><?= $e($client['name'] ?? '—') ?></dd>
 
-        <dt><?= $e($report['meta']['multi_project'] ? $t('projects') : $t('project')) ?></dt>
-        <dd><?= $e($project['name'] ?? $t('all_projects')) ?></dd>
+        <dt><?= $t->label($report['meta']['multi_project'] ? 'projects' : 'project') ?></dt>
+        <dd><?= $project !== null ? $e($project['name']) : $t->label('all_projects') ?></dd>
 
-        <dt><?= $e($t('period')) ?></dt>
+        <dt><?= $t->label('period') ?></dt>
         <dd><?= $e($report['period']['first_date']) ?> – <?= $e($report['period']['last_date']) ?></dd>
 
-        <dt><?= $e($t('effort')) ?></dt>
+        <dt><?= $t->label('effort') ?></dt>
         <dd><?= $e($report['totals']['hhmm']) ?>
             (<?= $e($t->number($report['totals']['decimal'])) ?> h)</dd>
     </dl>
 
-    <p class="listing__label"><?= $e($t('listing')) ?></p>
+    <p class="listing__label"><?= $t->label('listing') ?></p>
 
     <table class="items">
         <thead>
             <tr>
-                <th class="col-date"><?= $e($t('date')) ?></th>
+                <th class="col-date"><?= $t->label('date') ?></th>
                 <?php if ($opt['times']): ?>
-                    <th class="col-time"><?= $e($t('time')) ?></th>
+                    <th class="col-time"><?= $t->label('time') ?></th>
                 <?php endif; ?>
-                <th><?= $e($t('description')) ?></th>
-                <th class="col-dur"><?= $e($t('duration')) ?></th>
+                <th><?= $t->label('description') ?></th>
+                <th class="col-dur"><?= $t->label('duration') ?></th>
                 <?php if ($opt['costs']): ?>
-                    <th class="col-rate"><?= $e($t('rate')) ?></th>
-                    <th class="col-sum"><?= $e($t('amount')) ?></th>
+                    <th class="col-rate"><?= $t->label('rate') ?></th>
+                    <th class="col-sum"><?= $t->label('amount') ?></th>
                 <?php endif; ?>
             </tr>
         </thead>
@@ -135,17 +167,17 @@ $documentTitle = sprintf(
     </table>
 
     <div class="totals">
-        <span class="totals__label"><?= $e($t('total')) ?></span>
+        <span class="totals__label"><?= $t->label('total') ?></span>
         <div class="totals__values">
             <div class="totals__hours">
                 <?= $e($report['totals']['hhmm']) ?>
                 <span class="totals__hint">|
-                    <?= $e($t->number($report['totals']['decimal'])) ?> <?= $e($t('total_hours')) ?></span>
+                    <?= $e($t->number($report['totals']['decimal'])) ?> <?= $t->label('total_hours') ?></span>
             </div>
             <?php if ($opt['costs'] && $report['totals']['amount'] !== null): ?>
                 <div class="totals__amount">
                     <?= $e($t->money((float) $report['totals']['amount'], $currency)) ?>
-                    <span class="totals__hint"><?= $e($t('net')) ?></span>
+                    <span class="totals__hint"><?= $t->label('net') ?></span>
                 </div>
             <?php endif; ?>
         </div>
@@ -161,15 +193,47 @@ $documentTitle = sprintf(
 </div>
 
 <script>
-// Safari lässt die Seite nach dem Druckdialog gelegentlich weiß zurück – der
-// Inhalt steht noch im DOM, nur gezeichnet wird er nicht mehr. Ein erzwungener
-// Reflow holt ihn zurück, ohne dass man neu laden muss.
-window.addEventListener('afterprint', function () {
-    var body = document.body;
-    body.style.display = 'none';
-    void body.offsetHeight;
-    body.style.display = '';
-});
+(function () {
+    // Safari: window.print() hält den Webprozess an, solange der Druckdialog
+    // offen ist. Teilen sich weitere, gerade unsichtbare Tabs derselben Seite
+    // den Prozess (die App, aus der der Nachweis geöffnet wurde), hält Safari
+    // sie nach ~3 s für hängend und beendet den ganzen Prozess – Dialog weg,
+    // Vorschau leer. Über ⌘P bzw. „Ablage > Drucken“ passiert das nicht, weil
+    // dabei kein Skript wartet. In Safari daher kein Knopf, sondern der
+    // Hinweis auf ⌘P; alle anderen Browser drucken über den Knopf.
+    var isSafari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+    var button = document.querySelector('[data-print]');
+
+    if (isSafari) {
+        button.hidden = true;
+        document.querySelector('[data-print-hint]').hidden = false;
+    } else {
+        button.addEventListener('click', function () { window.print(); });
+    }
+
+    // Zusammenfassung in die Zwischenablage.
+    function copyText(field) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(field.value);
+        }
+        field.select();
+        return document.execCommand('copy') ? Promise.resolve() : Promise.reject();
+    }
+
+    document.querySelectorAll('[data-copy]').forEach(function (button) {
+        var label = button.textContent;
+        button.addEventListener('click', function () {
+            copyText(document.getElementById(button.dataset.copy)).then(function () {
+                button.textContent = <?= json_encode($ui('ui_copied'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+                button.classList.add('is-done');
+                setTimeout(function () {
+                    button.textContent = label;
+                    button.classList.remove('is-done');
+                }, 1500);
+            });
+        });
+    });
+})();
 </script>
 </body>
 </html>

@@ -107,7 +107,10 @@ final class ReportController
             'lang'       => $req->query['lang'] ?? null,
         ]);
 
-        return Response::html(Renderer::render($template, $report));
+        // Sprache der Oberfläche für die Bedienelemente (nicht gedruckt).
+        $ui = in_array($req->query['ui'] ?? null, ['de', 'en'], true) ? $req->query['ui'] : 'de';
+
+        return Response::html(Renderer::render($template, $report, $ui));
     }
 
     // -- Hilfen -------------------------------------------------------------

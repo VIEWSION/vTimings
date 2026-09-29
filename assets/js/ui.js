@@ -1,6 +1,7 @@
 // Wiederverwendete Bausteine: Toasts, Dialoge, Teilprojekt-Auswahl.
 
 import { esc, html } from './util.js';
+import { icon } from './icons.js';
 import { t } from './i18n.js';
 import { flatSubprojects, loadTree } from './store.js';
 
@@ -47,6 +48,11 @@ export function toastError(error) {
 /**
  * Modaler Dialog. `render` liefert das Innere, `buttons` die Aktionen.
  * Auflösung mit dem Wert des geklickten Buttons (null bei Abbruch).
+ *
+ * Abbrechen ist immer das ✕ im Kopf (bzw. Esc oder Klick daneben) – einen
+ * eigenen Abbrechen-Button gibt es nicht. Ein Button mit `icon` zeigt nur das
+ * Symbol, `label` wird dann Tooltip und Screenreader-Text. `align: 'start'`
+ * stellt ihn an den linken Rand (z. B. Löschen).
  */
 export function dialog({ title, body, buttons = [], onMount }) {
     return new Promise((resolve) => {
@@ -56,21 +62,36 @@ export function dialog({ title, body, buttons = [], onMount }) {
             <div class="dialog" role="dialog" aria-modal="true" aria-label="${title}">
                 <header class="dialog__head">
                     <h2>${title}</h2>
-                    <button class="icon-btn" data-close aria-label="${t('common.close')}">✕</button>
+                    <button class="icon-btn dialog__close" data-close
+                            title="${t('common.close')}" aria-label="${t('common.close')}">${icon('close', 20)}</button>
                 </header>
                 <div class="dialog__body"></div>
                 <footer class="dialog__foot"></footer>
             </div>`;
 
+        // Views reichen ihren Inhalt meist als einzelnes <div> herein. Damit
+        // der Abstand von .dialog__body auch zwischen dessen Feldern greift,
+        // wird der Wrapper selbst zur Spalte (.dialog__content).
         const bodyHost = overlay.querySelector('.dialog__body');
-        if (body instanceof Node) bodyHost.append(body);
+        if (body instanceof Element) {
+            body.classList.add('dialog__content');
+            bodyHost.append(body);
+        } else if (body instanceof Node) bodyHost.append(body);
         else bodyHost.innerHTML = body;
 
         const foot = overlay.querySelector('.dialog__foot');
         for (const button of buttons) {
             const el = document.createElement('button');
-            el.className = `btn ${button.kind ? 'btn--' + button.kind : ''}`;
-            el.textContent = button.label;
+            el.type = 'button';
+            el.className = ['btn', button.kind && 'btn--' + button.kind, button.icon && 'btn--icon',
+                button.align === 'start' && 'dialog__start'].filter(Boolean).join(' ');
+            if (button.icon) {
+                el.innerHTML = icon(button.icon, 20).toString();
+                el.title = button.label;
+                el.setAttribute('aria-label', button.label);
+            } else {
+                el.textContent = button.label;
+            }
             el.addEventListener('click', async () => {
                 if (button.validate) {
                     // Während des Speicherns sperren, sonst löst ein zweiter
@@ -87,6 +108,7 @@ export function dialog({ title, body, buttons = [], onMount }) {
             });
             foot.append(el);
         }
+        if (!buttons.length) foot.remove();
 
         function close(value) {
             document.removeEventListener('keydown', onKey);
@@ -94,11 +116,16 @@ export function dialog({ title, body, buttons = [], onMount }) {
             resolve(value);
         }
         function onKey(event) {
-            if (event.key === 'Escape') close(null);
+            // Bei gestapelten Dialogen (z. B. Löschen bestätigen über dem
+            // Bearbeiten) schließt Esc nur den obersten.
+            if (event.key !== 'Escape') return;
+            const overlays = document.querySelectorAll('.overlay');
+            if (overlays[overlays.length - 1] === overlay) close(null);
         }
 
         overlay.addEventListener('click', (event) => {
-            if (event.target === overlay || event.target.hasAttribute('data-close')) close(null);
+            // closest(): der Klick trifft meist das <svg> im Button, nicht ihn selbst.
+            if (event.target === overlay || event.target.closest('[data-close]')) close(null);
         });
         document.addEventListener('keydown', onKey);
         document.body.append(overlay);
@@ -107,7 +134,7 @@ export function dialog({ title, body, buttons = [], onMount }) {
         // Erstes Bedienelement im Inhalt, nicht das ✕ im Kopf – sonst landet
         // z. B. im Teilprojekt-Picker die Eingabe nicht im Suchfeld.
         const first = ':is(input, select, textarea, button):not(:disabled):not([hidden])';
-        (bodyHost.querySelector(first) ?? foot.querySelector(first))?.focus();
+        (bodyHost.querySelector(first) ?? overlay.querySelector(`.dialog__foot ${first}`))?.focus();
     });
 }
 
@@ -153,44 +180,69 @@ export function showFieldErrors(root, error) {
  * offen und die Eingaben stehen – der Fehler erscheint am jeweiligen Feld.
  * Geschlossen wird erst, wenn `save` ohne Ausnahme durchläuft.
  *
- * @returns Rückgabe von `save` (bzw. true) oder null bei Abbruch.
+ * Mit `remove` kommt links ein Löschen-Button dazu. Er fragt nach und
+ * schließt den Dialog nur, wenn das Löschen geklappt hat.
+ *
+ * @returns Rückgabe von `save` (bzw. true), 'removed' nach dem Löschen oder
+ *          null bei Abbruch.
  */
-export async function saveDialog({ title, body, save, saveLabel = t('common.save'), cancelLabel = t('common.cancel') }) {
+export async function saveDialog({
+    title, body, save, saveLabel = t('common.save'), saveIcon = 'check',
+    remove = null, removeLabel = t('common.delete'), removeConfirm = null,
+}) {
     let result;
 
-    const outcome = await dialog({
-        title,
-        body,
-        buttons: [
-            { label: cancelLabel, value: null },
-            {
-                label: saveLabel,
-                value: '__saved',
-                kind: 'primary',
-                validate: async (overlay) => {
-                    try {
-                        result = await save(overlay);
-                        return true;
-                    } catch (error) {
-                        const complete = showFieldErrors(overlay, error);
-                        if (!complete) toastError(error);
-                        return false;
-                    }
-                },
+    const buttons = [];
+    if (remove) {
+        buttons.push({
+            label: removeLabel,
+            icon: 'trash',
+            kind: 'danger',
+            align: 'start',
+            value: '__removed',
+            validate: async () => {
+                if (removeConfirm && !await confirmDialog(removeConfirm.title, removeConfirm.text, removeLabel)) {
+                    return false;
+                }
+                try {
+                    await remove();
+                    return true;
+                } catch (error) {
+                    toastError(error);
+                    return false;
+                }
             },
-        ],
+        });
+    }
+    buttons.push({
+        label: saveLabel,
+        icon: saveIcon,
+        value: '__saved',
+        kind: 'primary',
+        validate: async (overlay) => {
+            try {
+                result = await save(overlay);
+                return true;
+            } catch (error) {
+                const complete = showFieldErrors(overlay, error);
+                if (!complete) toastError(error);
+                return false;
+            }
+        },
     });
 
+    const outcome = await dialog({ title, body, buttons });
+
+    if (outcome === '__removed') return 'removed';
     return outcome === '__saved' ? (result ?? true) : null;
 }
 
-export async function confirmDialog(title, message, confirmLabel = t('common.delete')) {
+export async function confirmDialog(title, message, confirmLabel = t('common.delete'), confirmIcon = 'trash') {
     const result = await dialog({
         title,
         body: html`<p>${message}</p>`,
         buttons: [
-            { label: t('common.cancel'), value: false },
-            { label: confirmLabel, value: true, kind: 'danger' },
+            { label: confirmLabel, value: true, kind: 'danger', icon: confirmIcon },
         ],
     });
     return result === true;
@@ -253,8 +305,7 @@ export async function pickSubproject({ title = t('picker.title'), current = null
         title,
         body: node,
         buttons: [
-            { label: t('common.cancel'), value: null },
-            { label: t('common.apply'), value: 'ok', kind: 'primary' },
+            { label: t('common.apply'), value: 'ok', kind: 'primary', icon: 'check' },
         ],
     });
 

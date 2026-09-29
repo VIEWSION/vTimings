@@ -3,7 +3,9 @@
 import { api, ApiError } from './api.js';
 import { state, loadSession, login, logout, loadTimers, subscribe, changeLang } from './store.js';
 import { LANGS, lang, setLang, t } from './i18n.js';
-import { toastError } from './ui.js';
+import { dialog, toastError } from './ui.js';
+import { nextTheme, setTheme, theme } from './theme.js';
+import { icon } from './icons.js';
 import { clock, html } from './util.js';
 
 import { timerView } from './views/timer.js';
@@ -36,15 +38,15 @@ const CLIENT_ROUTES = {
 // Die Beschriftungen entstehen erst beim Aufbau der Hülle – nach einem
 // Sprachwechsel steht in `t()` sonst noch der alte Text.
 const ADMIN_NAV = () => [
-    { path: '/timer', label: t('nav.timer'), icon: '⏱' },
-    { path: '/eintraege', label: t('nav.entries'), icon: '☰' },
-    { path: '/stammdaten', label: t('nav.master'), icon: '▤' },
-    { path: '/einstellungen', label: t('nav.more'), icon: '⚙' },
+    { path: '/timer', label: t('nav.timer'), icon: 'timer' },
+    { path: '/eintraege', label: t('nav.entries'), icon: 'list' },
+    { path: '/stammdaten', label: t('nav.master'), icon: 'folder' },
+    { path: '/einstellungen', label: t('nav.more'), icon: 'more' },
 ];
 
 const CLIENT_NAV = () => [
-    { path: '/uebersicht', label: t('nav.overview'), icon: '◪' },
-    { path: '/leistungen', label: t('nav.services'), icon: '☰' },
+    { path: '/uebersicht', label: t('nav.overview'), icon: 'chart' },
+    { path: '/leistungen', label: t('nav.services'), icon: 'list' },
 ];
 
 /** Kundenzugänge bekommen eine eigene, reduzierte Navigation. */
@@ -63,6 +65,9 @@ function homePath() {
 const app = document.querySelector('#app');
 // Programmversion aus index.php (Datei VERSION) – oben links neben dem Namen.
 const VERSION = document.documentElement.dataset.version || '';
+
+// Repository (privat) – Changelog, Quellcode und Wünsche liegen dort.
+const REPO = 'https://github.com/VIEWSION/vTimings';
 let currentView = null;
 let pollTimer = null;
 let clockTimer = null;
@@ -106,6 +111,23 @@ function langSwitch(className) {
                         data-lang="${code}" lang="${code}" title="${t('lang.' + code)}"
                         ${code === lang() ? { __raw: 'aria-current="true"' } : ''}>${code.toUpperCase()}</button>`)}
         </div>`;
+}
+
+// -- Darstellung ------------------------------------------------------------
+
+/**
+ * Ein Knopf, der reihum automatisch → hell → dunkel schaltet. Das Symbol
+ * zeigt die aktuelle Wahl, der Tooltip zusätzlich die nächste.
+ */
+function themeButton() {
+    return html`<button type="button" class="icon-btn topbar__icon" id="theme">${icon(theme())}</button>`;
+}
+
+function paintThemeButton(button) {
+    const label = t('theme.current', { mode: t('theme.' + theme()), next: t('theme.' + nextTheme()) });
+    button.innerHTML = icon(theme()).toString();
+    button.title = label;
+    button.setAttribute('aria-label', label);
 }
 
 // -- Anmeldung --------------------------------------------------------------
@@ -183,6 +205,43 @@ function storeRememberChoice(checked) {
     } catch { /* privater Modus */ }
 }
 
+// -- Über vTimings ------------------------------------------------------------
+
+/**
+ * Kleines Info-Fenster hinter dem Namen oben links. Die GitHub-Links nur für
+ * Administratoren: das Repository ist privat, ein Kundenzugang landete dort
+ * auf einer 404-Seite.
+ */
+function showAbout() {
+    const base = document.documentElement.dataset.base || '';
+    const admin = state.user?.role === 'admin';
+    const link = (href, iconName, label) => html`
+        <a class="about__link" href="${href}" target="_blank" rel="noopener">
+            ${icon(iconName, 18)}<span>${label}</span>
+        </a>`;
+
+    dialog({
+        title: t('app.about'),
+        body: html`
+            <div class="about">
+                <div class="about__head">
+                    <img class="about__logo" src="${base}/assets/icons/icon.svg?v=${VERSION}" alt="" width="56" height="56">
+                    <div>
+                        <strong class="about__name">vTimings</strong>
+                        ${VERSION ? html`<span class="about__version">${t('app.version', { version: VERSION })}</span>` : ''}
+                    </div>
+                </div>
+                <p class="muted about__text">${t('app.tagline')}</p>
+                ${admin ? html`
+                    <nav class="about__links">
+                        ${link(`${REPO}/blob/main/CHANGELOG.md`, 'list', t('app.changelog'))}
+                        ${link(REPO, 'open', t('app.source'))}
+                        ${link(`${REPO}/issues`, 'edit', t('app.issues'))}
+                    </nav>` : ''}
+            </div>`.toString(),
+    });
+}
+
 // -- Shell ------------------------------------------------------------------
 
 function renderShell() {
@@ -194,22 +253,20 @@ function renderShell() {
     app.innerHTML = html`
         <div class="shell">
             <header class="topbar">
-                <span class="topbar__brand">
+                <button type="button" class="topbar__brand" id="about" title="${t('app.about')}">
                     vTimings
-                    ${VERSION ? html`<span class="topbar__version" title="${t('app.version', { version: VERSION })}">v${VERSION}</span>` : ''}
-                </span>
+                    ${VERSION ? html`<span class="topbar__version">v${VERSION}</span>` : ''}
+                </button>
                 <div class="topbar__timer" id="topbar-timer"></div>
                 <nav class="topbar__nav">
                     ${items.map((item) => html`
                         <a class="topbar__link" href="#${item.path}" data-path="${item.path}">${item.label}</a>`)}
                 </nav>
                 <div class="topbar__tools">
-                    <button type="button" class="icon-btn topbar__logout" id="logout"
+                    ${themeButton()}
+                    <button type="button" class="icon-btn topbar__icon topbar__logout" id="logout"
                             title="${t('auth.signOut')}" aria-label="${t('auth.signOut')}">
-                        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
-                             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 3v9"/><path d="M6.6 6.6a8 8 0 1 0 10.8 0"/>
-                        </svg>
+                        ${icon('power')}
                     </button>
                     ${langSwitch('topbar__lang')}
                 </div>
@@ -218,11 +275,19 @@ function renderShell() {
             <nav class="tabbar" style="grid-template-columns: repeat(${items.length}, 1fr)">
                 ${items.map((item) => html`
                     <a class="tabbar__link" href="#${item.path}" data-path="${item.path}">
-                        <span class="tabbar__icon" aria-hidden="true">${item.icon}</span>
+                        <span class="tabbar__icon" aria-hidden="true">${icon(item.icon, 22)}</span>
                         <span>${item.label}</span>
                     </a>`)}
             </nav>
         </div>`;
+
+    paintThemeButton(app.querySelector('#theme'));
+    app.querySelector('#theme').addEventListener('click', (event) => {
+        setTheme(nextTheme());
+        paintThemeButton(event.currentTarget);
+    });
+
+    app.querySelector('#about').addEventListener('click', showAbout);
 
     app.querySelector('#logout').addEventListener('click', async () => {
         try {

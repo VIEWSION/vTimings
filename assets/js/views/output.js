@@ -3,7 +3,7 @@
 // es sich bezieht: die aktuellen Filter oder die angehakten Einträge.
 
 import { api } from '../api.js';
-import { LANGS, t } from '../i18n.js';
+import { LANGS, lang, t } from '../i18n.js';
 import { loadPref, savePref } from '../prefs.js';
 import { saveDialog } from '../ui.js';
 import { decimal, html, money } from '../util.js';
@@ -130,6 +130,7 @@ export async function reportDialog(scope) {
                 <select class="input" name="lang">
                     <option value="">${t('reports.langByClient')}</option>
                     ${LANGS.map((code) => html`<option value="${code}">${t('lang.' + code)}</option>`)}
+                    <option value="de-en">${t('reports.langBoth')}</option>
                 </select>
             </label>
         </div>
@@ -150,6 +151,7 @@ export async function reportDialog(scope) {
         title: t('reports.statement'),
         body: node,
         saveLabel: t('reports.open'),
+        saveIcon: 'open',
         // Nichts davor abwarten: window.open muss noch im Klick passieren,
         // sonst hält der Browser das Fenster für ein Popup und blockt es.
         save: () => {
@@ -171,6 +173,7 @@ export async function reportDialog(scope) {
                 group_days: chosen.group_days ? 1 : 0,
                 times: chosen.times ? 1 : 0,
                 notes: chosen.notes ? 1 : 0,
+                ui: lang(),
             }), '_blank', 'noopener');
         },
     });
@@ -198,6 +201,7 @@ export async function exportDialog(scope) {
         title: t('reports.export'),
         body: node,
         saveLabel: t('output.download'),
+        saveIcon: 'download',
         save: () => {
             assertNotEmpty(scope);
             const format = node.querySelector('[name=format]:checked')?.value || current;

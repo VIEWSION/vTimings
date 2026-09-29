@@ -1,8 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vTimings">
-    <!-- Stoppuhr mit offenem Ring; die Zeiger bilden ein "v", der lange zeigt
-         in die Lücke. Monochrom – Quelle für icon-*.png. -->
-    <rect width="512" height="512" rx="112" fill="#111114"/>
-    <g stroke="#ffffff">
+    <!-- Favicon ohne Fläche: dunkel im hellen, hell im dunklen Browser. -->
+    <style>
+        g { stroke: #111114; }
+        @media (prefers-color-scheme: dark) { g { stroke: #ffffff; } }
+    </style>
+    <g>
         <path d="M375.5 175.7A156 156 0 1 1 296.4 125.3" fill="none" stroke-width="34" stroke-linecap="round"/>
         <path d="M232 84h48M256 84v30" fill="none" stroke-width="34" stroke-linecap="round"/>
         <path d="M196 210L256 276L346 146" fill="none" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>

@@ -110,6 +110,12 @@ Schnellzeitraum wie „Dieser Monat“ wird als solcher gespeichert und beim
 nächsten Aufruf neu berechnet. Der Ankertag im Kalender liegt im
 `sessionStorage`: er übersteht ein Neuladen, ein neuer Tab beginnt bei heute.
 
+**Darstellung** (automatisch/hell/dunkel, Symbol oben rechts) liegt als
+`vt.theme` im `localStorage` – für den ganzen Browser, nicht je Benutzer, weil
+sie schon vor der Anmeldung gilt. Ein kleines Inline-Skript in `index.php`
+setzt `html[data-theme]`, bevor das Stylesheet zeichnet; ohne Eintrag folgt
+die Oberfläche dem System (`assets/js/theme.js`).
+
 **Version:** steht in `VERSION`, die Änderungen je Version in
 [CHANGELOG.md](CHANGELOG.md).
 

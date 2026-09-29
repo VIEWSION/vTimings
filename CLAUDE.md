@@ -70,6 +70,30 @@ der Aufsatz selbst nach. Keine eigene Dropdown-Logik in Views.
 `#results` in `entries.js`), bekommt die Klasse `stack` – sonst liegen die
 Karten ohne Abstand aneinander. Keine Einzel-Margins an Karten.
 
+**Farben und Design:** Nur über die CSS-Variablen in `app.css` (`--surface`,
+`--surface-2/3`, `--border`, `--text-muted`, `--accent`, `--accent-soft`,
+`--ring`, `--shadow`/`--shadow-lg`, `--input-bg`) – keine festen Farbwerte in
+Regeln oder Views, sonst stimmt eine der drei Darstellungen (automatisch,
+hell, dunkel; `html[data-theme]`, siehe `theme.js`) nicht. Der dunkle
+Variablenblock steht absichtlich zweimal (Media-Query und
+`[data-theme="dark"]`); Änderungen in beiden nachziehen.
+
+**Abstände in Dialogen:** `dialog()` gibt einem als Element übergebenen
+Inhalt die Klasse `dialog__content` (Spalte mit 1.1rem Abstand). Felder also
+als direkte Kinder dieses Wrappers anlegen bzw. in `.filters__row`
+gruppieren – keine Margins an einzelnen Feldern. Ein `<fieldset>` mit
+mehreren Feldern braucht selbst `display: flex; gap` (siehe
+`.entryform__fields`).
+
+**Symbole und Dialog-Aktionen:** Symbole nur über `icon('name')` aus
+`assets/js/icons.js` (Linien, 1.5er Strich) – keine Schriftzeichen wie ✎ 🗑
+▶ ✕ in Views, neue Symbole dort ergänzen. Dialoge haben keinen
+Abbrechen-Button (das ✕ im Kopf reicht); Aktionen als Icon-Button über
+`{ label, icon }` in `dialog()` bzw. `saveIcon` in `saveDialog()`, das
+`label` wird Tooltip. Löschen gehört in den Bearbeiten-Dialog
+(`saveDialog({ remove, removeConfirm })`), nicht als eigenes Symbol in
+Listen – Einträge öffnen per Klick auf die Zeile (`data-edit`).
+
 Formulare in Dialogen: `saveDialog()` + `showFieldErrors()` aus `ui.js`
 verwenden, nicht `dialog()` direkt mit manuellem try/catch. `saveDialog`
 hält den Dialog bei einem Fehler offen (Eingaben bleiben erhalten) und

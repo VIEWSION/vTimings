@@ -1367,6 +1367,17 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 .budget__pkg.is-active .budget__status { color: var(--accent); font-weight: 600; }
 .budget__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .budget__done { margin-top: 0.5rem; }
+.budget__pkg.is-billable { border-color: var(--accent); border-style: dashed; }
+.budget__bill { margin-top: 0.5rem; }
+.budget__preview { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 14rem; overflow-y: auto; font-size: 0.85rem; }
+.budget__preview li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
 .budget__done summary { cursor: pointer; font-size: 0.8rem; }
 
 /* -- Kundenportal --------------------------------------------------------- */

@@ -15,13 +15,15 @@ final class EntryRepo
         s.name AS subproject_name, s.project_id AS project_id,
         p.name AS project_name, p.color AS project_color, p.client_id AS client_id,
         c.name AS client_name, c.color AS client_color, c.currency AS currency,
-        i.number AS invoice_number';
+        i.number AS invoice_number,
+        bu.note AS budget_note, bu.starts_at AS budget_starts_at';
 
     private const JOIN = 'FROM entries e
         JOIN subprojects s ON s.id = e.subproject_id
         JOIN projects    p ON p.id = s.project_id
         JOIN clients     c ON c.id = p.client_id
-        LEFT JOIN invoices i ON i.id = e.invoice_id';
+        LEFT JOIN invoices i ON i.id = e.invoice_id
+        LEFT JOIN budgets bu ON bu.id = e.budget_id';
 
     /**
      * @param array{
@@ -353,6 +355,12 @@ final class EntryRepo
      * Änderungen an; "abgerechnet" ändert zuerst und sperrt dann. Ohne
      * Statuswechsel bleibt ein abgerechneter Eintrag gesperrt.
      *
+     * `budget_id` und `billed_at` setzt nur BudgetRepo (die Controller
+     * reichen sie nicht durch): mit `billed` = true wird über das Paket
+     * abgerechnet, ohne `billed` hängt ein schon abgerechneter Eintrag nur
+     * am Paket (bzw. mit null wieder ab). Über ein Paket abgerechnete
+     * Einträge öffnet nur BudgetRepo::unbill() wieder – mit budget_id null.
+     *
      * @param array<string,mixed> $data
      */
     public static function update(int $id, array $data): array
@@ -360,10 +368,18 @@ final class EntryRepo
         $entry = self::findOrFail($id);
 
         $billed = array_key_exists('billed', $data) ? (bool) $data['billed'] : null;
-        unset($data['billed']);
+        $budgetGiven = array_key_exists('budget_id', $data);
+        $budgetId = $budgetGiven && $data['budget_id'] !== null ? (int) $data['budget_id'] : null;
+        $billedAt = isset($data['billed_at']) ? (int) $data['billed_at'] : Clock::now();
+        unset($data['billed'], $data['budget_id'], $data['billed_at']);
 
         if ($entry['billed']) {
             if ($billed !== false) {
+                // Paketzuordnung eines abgerechneten Eintrags – Inhalt bleibt.
+                if ($budgetGiven && $data === []) {
+                    Database::update('entries', $id, ['budget_id' => $budgetId, 'updated_at' => Clock::now()]);
+                    return self::findOrFail($id);
+                }
                 // Nur "bleibt abgerechnet" bestätigt – nichts zu tun.
                 if ($data === []) {
                     return $entry;
@@ -373,18 +389,89 @@ final class EntryRepo
             if ($entry['invoice_id'] !== null) {
                 self::assertEditable($entry); // an einer Rechnung: nicht wieder öffnen
             }
-            Database::update('entries', $id, ['billed_at' => null, 'updated_at' => Clock::now()]);
+            if ($entry['budget_id'] !== null && !($budgetGiven && $budgetId === null)) {
+                self::assertEditable($entry); // über ein Paket: nur mit dem Paket wieder öffnen
+            }
+            Database::update('entries', $id, ['billed_at' => null, 'budget_id' => null, 'updated_at' => Clock::now()]);
             $entry = self::findOrFail($id);
         }
 
         $entry = self::applyChanges($id, $entry, $data);
 
         if ($billed === true) {
-            Database::update('entries', $id, ['billed_at' => Clock::now(), 'updated_at' => Clock::now()]);
+            Database::update('entries', $id, [
+                'billed_at'  => $billedAt,
+                'budget_id'  => $budgetId,
+                'updated_at' => Clock::now(),
+            ]);
             $entry = self::findOrFail($id);
         }
 
         return $entry;
+    }
+
+    /**
+     * Einen offenen Eintrag in aufeinanderfolgende Stücke teilen, z. B. an
+     * der Grenze zweier Stundenpakete. Das erste Stück behält die ID, die
+     * übrigen sind neue Einträge mit Teilprojekt, Notiz, Satz und Art des
+     * Originals. Die Zeiten schließen lückenlos aneinander an.
+     *
+     * @param list<int> $minutes Dauer je Stück, Summe = Dauer des Eintrags
+     * @return list<int> IDs der Stücke in zeitlicher Reihenfolge
+     */
+    public static function split(int $id, array $minutes): array
+    {
+        $entry = self::findOrFail($id);
+        self::assertEditable($entry);
+
+        if (count($minutes) < 2 || min($minutes) <= 0 || array_sum($minutes) !== $entry['duration_min']) {
+            throw HttpException::badRequest('Die Stücke passen nicht zur Dauer des Eintrags.');
+        }
+
+        $row = Database::one('SELECT * FROM entries WHERE id = :id', ['id' => $id]);
+
+        return Database::transaction(static function () use ($id, $row, $minutes): array {
+            $now = Clock::now();
+            $cursor = (int) $row['started_at'];
+            $last = count($minutes) - 1;
+            $ids = [];
+
+            foreach ($minutes as $i => $part) {
+                $start = $cursor;
+                $end = $start + $part * 60;
+                // Das letzte Stück endet wie das Original, falls die Dauer
+                // von der Zeitspanne abweicht (z. B. aus dem Import).
+                if ($i === $last && (int) $row['ended_at'] >= $start) {
+                    $end = (int) $row['ended_at'];
+                }
+                $cursor = $end;
+
+                $fields = [
+                    'started_at'   => $start,
+                    'ended_at'     => $end,
+                    'duration_min' => $part,
+                    'amount'       => Rates::amount($part, (float) $row['rate']),
+                    'updated_at'   => $now,
+                ];
+
+                if ($i === 0) {
+                    Database::update('entries', $id, $fields);
+                    $ids[] = $id;
+                    continue;
+                }
+                $ids[] = Database::insert('entries', $fields + [
+                    'subproject_id' => $row['subproject_id'],
+                    'note'          => $row['note'],
+                    'rate'          => $row['rate'],
+                    'type'          => $row['type'],
+                    'billable'      => $row['billable'],
+                    'source'        => $row['source'],
+                    'created_at'    => $now,
+                ]);
+            }
+
+            return $ids;
+        });
     }
 
     /** Die eigentlichen Feldänderungen eines offenen Eintrags. */
@@ -492,6 +579,10 @@ final class EntryRepo
                 }
                 if ($entry['billed'] && $billed === false && $entry['invoice_id'] !== null) {
                     $skipped[] = ['id' => $id, 'reason' => 'invoiced'];
+                    continue;
+                }
+                if ($entry['billed'] && $billed === false && $entry['budget_id'] !== null) {
+                    $skipped[] = ['id' => $id, 'reason' => 'budget'];
                     continue;
                 }
                 if ($data === [] && $billed === $entry['billed']) {
@@ -683,10 +774,19 @@ final class EntryRepo
     {
         if ($entry['billed_at'] !== null) {
             throw HttpException::conflict(
-                $entry['invoice_number'] !== null
-                    ? 'Der Eintrag ist mit Rechnung ' . $entry['invoice_number'] . ' abgerechnet und gesperrt.'
-                    : 'Der Eintrag ist abgerechnet und gesperrt. Zum Ändern den Status wieder auf „offen“ setzen.',
-                ['invoice_id' => $entry['invoice_id'], 'invoice_number' => $entry['invoice_number']]
+                match (true) {
+                    $entry['invoice_number'] !== null
+                        => 'Der Eintrag ist mit Rechnung ' . $entry['invoice_number'] . ' abgerechnet und gesperrt.',
+                    $entry['budget_id'] !== null
+                        => 'Der Eintrag ist über ein Stundenpaket abgerechnet und gesperrt. Zum Ändern in den Stammdaten die Abrechnung des Pakets aufheben.',
+                    default
+                        => 'Der Eintrag ist abgerechnet und gesperrt. Zum Ändern den Status wieder auf „offen“ setzen.',
+                },
+                [
+                    'invoice_id'     => $entry['invoice_id'],
+                    'invoice_number' => $entry['invoice_number'],
+                    'budget_id'      => $entry['budget_id'],
+                ]
             );
         }
     }
@@ -724,6 +824,9 @@ final class EntryRepo
             'billed_at'       => $row['billed_at'] === null ? null : Clock::iso((int) $row['billed_at']),
             'invoice_id'      => $row['invoice_id'] === null ? null : (int) $row['invoice_id'],
             'invoice_number'  => $row['invoice_number'],
+            'budget_id'       => $row['budget_id'] === null ? null : (int) $row['budget_id'],
+            'budget_note'     => $row['budget_id'] === null ? null : (string) ($row['budget_note'] ?? ''),
+            'budget_starts_on' => $row['budget_starts_at'] === null ? null : Clock::day((int) $row['budget_starts_at']),
             'source'          => (string) $row['source'],
             'overnight'       => Clock::day($start) !== Clock::day($end),
             'deleted_at'      => $row['deleted_at'] === null ? null : Clock::iso((int) $row['deleted_at']),

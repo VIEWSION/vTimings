@@ -2,7 +2,7 @@
 // Auf schmalen Displays klappt das zu einer Spalte mit Zurück-Navigation um.
 
 import { api } from '../api.js';
-import { state, loadTree, invalidateTree } from '../store.js';
+import { state, loadTree, invalidateTree, byActivity } from '../store.js';
 import { LANGS, t } from '../i18n.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
@@ -36,21 +36,9 @@ function storeSort() {
     savePref('masterSort', sortBy);
 }
 
-/**
- * "Zuletzt aktiv" räumt nicht die Archivierung um: archivierte Einträge
- * stehen weiterhin hinten, wie es die API schon liefert. Innerhalb einer
- * Gruppe kommt zuerst, wer zuletzt gebucht hat; ganz ohne Buchung ans Ende
- * der Gruppe, danach alphabetisch als stabiler Tiebreak.
- */
+/** Alphabetisch liefert schon die API; "zuletzt aktiv" siehe byActivity(). */
 function sortRows(list) {
-    if (sortBy !== 'activity') return list;
-    return [...list].sort((a, b) => {
-        if (a.archived !== b.archived) return a.archived ? 1 : -1;
-        const at = a.stats?.last_at ? Date.parse(a.stats.last_at) : -Infinity;
-        const bt = b.stats?.last_at ? Date.parse(b.stats.last_at) : -Infinity;
-        if (at !== bt) return bt - at;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-    });
+    return sortBy === 'activity' ? byActivity(list) : list;
 }
 
 export const masterView = {
@@ -257,14 +245,14 @@ function balanceLine(pool) {
 }
 
 /**
- * Kontingent mit seinen Paketen. Laufende und vorrätige Pakete stehen offen
- * in zeitlicher Reihenfolge, aufgebrauchte und abgelaufene zusammengeklappt
- * darunter (jüngstes zuerst).
+ * Kontingent mit seinen Paketen. Offene Pakete stehen in zeitlicher
+ * Reihenfolge da – auch aufgebrauchte, solange sie nicht abgerechnet sind –,
+ * abgerechnete zusammengeklappt darunter (jüngstes zuerst).
  */
 function budgetSection(pool) {
     if (!pool) return '';
 
-    const finished = (pkg) => pkg.status === 'used' || pkg.status === 'expired';
+    const finished = (pkg) => pkg.status === 'billed';
     const live = pool.packages.filter((pkg) => !finished(pkg));
     const done = pool.packages.filter(finished).reverse();
 
@@ -279,6 +267,9 @@ function budgetSection(pool) {
                 <p class="budget__hint muted">${t('budget.overdrawnHint')}</p>` : ''}
             ${pool.project_id ? '' : html`
                 <p class="budget__hint muted">${t('budget.clientScope')}</p>`}
+            ${pool.can_bill_count ? html`
+                <button type="button" class="btn btn--small budget__bill" data-bill-budget="${pool.key}">
+                    ${icon('bill', 14)} ${t('budget.billAction', { count: pool.can_bill_count })}</button>` : ''}
             ${live.length ? html`<ul class="budget__list">${live.map(packageRow)}</ul>` : ''}
             ${done.length ? html`
                 <details class="budget__done">
@@ -288,6 +279,17 @@ function budgetSection(pool) {
         </section>`;
 }
 
+function packageStatus(pkg) {
+    const parts = [pkg.status === 'billed'
+        ? t('budget.billedOn', { date: formatDate(pkg.billed_on) })
+        : t('budget.status.' + pkg.status)];
+    if (pkg.can_bill) parts.push(t('budget.readyToBill'));
+    if (pkg.expired_hours) parts.push(t('budget.lapsed', { hours: decimal(pkg.expired_hours) }));
+    if (pkg.carry_hours > 0) parts.push(t('budget.carryOut', { hours: decimal(pkg.carry_hours) }));
+    if (pkg.carry_hours < 0) parts.push(t('budget.carryIn', { hours: decimal(-pkg.carry_hours) }));
+    return parts.join(' · ');
+}
+
 function packageRow(pkg) {
     const period = pkg.expires_on
         ? t('budget.period', { from: formatDate(pkg.starts_on), to: formatDate(pkg.expires_on) })
@@ -295,7 +297,7 @@ function packageRow(pkg) {
 
     return html`
         <li>
-            <button type="button" class="budget__pkg is-${pkg.status}" data-edit-budget="${pkg.id}"
+            <button type="button" class="budget__pkg is-${pkg.status} ${pkg.can_bill ? 'is-billable' : ''}" data-edit-budget="${pkg.id}"
                     title="${t('budget.edit')}">
                 <span class="budget__pkg-main">
                     <strong>${decimal(pkg.hours)} h</strong>
@@ -304,8 +306,7 @@ function packageRow(pkg) {
                 </span>
                 <span class="budget__pkg-meta">
                     <span>${t('budget.usedOf', { used: decimal(pkg.used_hours), hours: decimal(pkg.hours) })}</span>
-                    <span class="budget__status">${t('budget.status.' + pkg.status)}${pkg.expired_hours
-                        ? ' · ' + t('budget.lapsed', { hours: decimal(pkg.expired_hours) }) : ''}</span>
+                    <span class="budget__status">${packageStatus(pkg)}</span>
                 </span>
             </button>
         </li>`;
@@ -367,6 +368,8 @@ function bind(root) {
         if (addB) return editBudget(root, null, addB.dataset.addBudget);
         const editB = target('edit-budget');
         if (editB) return editBudget(root, Number(editB.dataset.editBudget));
+        const billB = target('bill-budget');
+        if (billB) return billBudget(root, billB.dataset.billBudget);
 
         const editC = target('edit-client');
         if (editC) return editClient(root, Number(editC.dataset.editClient));
@@ -536,12 +539,19 @@ async function editBudget(root, id, level = 'project') {
     if (!client) return;
 
     let pkg = null;
+    let pool = null;
     if (id) {
         const pools = [client.budget, ...client.projects.map((p) => p.budget)].filter(Boolean);
-        pkg = pools.flatMap((pool) => pool.packages).find((p) => p.id === id) ?? null;
+        pool = pools.find((candidate) => candidate.packages.some((p) => p.id === id)) ?? null;
+        pkg = pool?.packages.find((p) => p.id === id) ?? null;
         if (!pkg) return;
         level = pkg.project_id ? 'project' : 'client';
     }
+    // Abgerechnet: Stunden und Zeitraum stehen fest, nur Preis und Notiz
+    // bleiben offen. Aufheben geht nur beim zuletzt abgerechneten Paket.
+    const billed = pkg?.status === 'billed';
+    const lastBilled = billed && pool.packages.filter((p) => p.status === 'billed').at(-1)?.id === pkg.id;
+    const lock = billed ? 'disabled' : '';
     const project = level === 'project'
         ? (pkg ? client.projects.find((p) => p.id === pkg.project_id) : currentProject())
         : null;
@@ -550,19 +560,20 @@ async function editBudget(root, id, level = 'project') {
     const node = document.createElement('div');
     node.innerHTML = html`
         <p class="muted">${project ? `${client.name} · ${project.name}` : `${client.name} · ${t('budget.allProjects')}`}</p>
+        ${billed ? html`<p class="outscope__warn">${t('budget.billedLocked', { date: formatDate(pkg.billed_on) })}</p>` : ''}
         <div class="filters__row">
             <label class="field field--inline"><span class="field__label">${t('budget.hours')}</span>
                 <input class="input" type="number" name="hours" step="0.25" min="0.25"
-                    value="${pkg?.hours ?? ''}" required></label>
+                    value="${pkg?.hours ?? ''}" required ${{ __raw: lock }}></label>
             <label class="field field--inline"><span class="field__label">${t('budget.price')}</span>
                 <input class="input" type="number" name="price" step="0.01" min="0"
                     value="${pkg?.price ?? ''}" placeholder="${t('budget.optional')}"></label>
         </div>
         <div class="filters__row">
             <label class="field field--inline"><span class="field__label">${t('budget.startsOn')}</span>
-                <input class="input" type="date" name="starts_on" value="${pkg?.starts_on ?? todayISO()}" required></label>
+                <input class="input" type="date" name="starts_on" value="${pkg?.starts_on ?? todayISO()}" required ${{ __raw: lock }}></label>
             <label class="field field--inline"><span class="field__label">${t('budget.expiresOn')}</span>
-                <input class="input" type="date" name="expires_on" value="${pkg?.expires_on ?? ''}"></label>
+                <input class="input" type="date" name="expires_on" value="${pkg?.expires_on ?? ''}" ${{ __raw: lock }}></label>
         </div>
         <p class="field__hint">${t('budget.formHint')}</p>
         <label class="field"><span class="field__label">${t('common.note')}</span>
@@ -574,25 +585,107 @@ async function editBudget(root, id, level = 'project') {
         title: id ? t('budget.edit') : t(level === 'client' ? 'budget.addClient' : 'budget.addProject'),
         body: node,
         save: async () => {
-            const payload = {
-                client_id: client.id,
-                project_id: project?.id ?? null,
-                hours: get('hours').value === '' ? null : Number(get('hours').value),
-                price: get('price').value === '' ? null : Number(get('price').value),
-                starts_on: get('starts_on').value,
-                expires_on: get('expires_on').value || null,
-                note: get('note').value,
-            };
+            const payload = billed
+                ? {
+                    price: get('price').value === '' ? null : Number(get('price').value),
+                    note: get('note').value,
+                }
+                : {
+                    client_id: client.id,
+                    project_id: project?.id ?? null,
+                    hours: get('hours').value === '' ? null : Number(get('hours').value),
+                    price: get('price').value === '' ? null : Number(get('price').value),
+                    starts_on: get('starts_on').value,
+                    expires_on: get('expires_on').value || null,
+                    note: get('note').value,
+                };
             if (id) await api.patch(`/budgets/${id}`, payload);
             else await api.post('/budgets', payload);
         },
-        remove: id ? () => api.delete(`/budgets/${id}`) : null,
+        remove: id && !billed ? () => api.delete(`/budgets/${id}`) : null,
         removeConfirm: { title: t('budget.deleteTitle'), text: t('budget.deleteText') },
+        actions: lastBilled ? [{
+            key: 'unbilled',
+            label: t('budget.unbill'),
+            icon: 'restore',
+            confirm: { title: t('budget.unbill'), text: t('budget.unbillText') },
+            run: () => api.delete(`/budgets/${id}/bill`),
+        }] : [],
     });
     if (!saved) return;
 
     invalidateTree();
-    toast(t(saved === 'removed' ? 'common.deleted' : 'common.saved'), 'ok', 2000);
+    toast(t({ removed: 'common.deleted', unbilled: 'budget.unbilled' }[saved] ?? 'common.saved'), 'ok', 2000);
+    await masterView.render(root);
+}
+
+/**
+ * Aufgebrauchte Pakete eines Kontingents abrechnen. Zeigt vorab, was
+ * passiert (Vorschau über dry_run); Teilen an den Paketgrenzen ist
+ * voreingestellt und lässt sich abwählen.
+ */
+async function billBudget(root, key) {
+    const client = currentClient();
+    const pool = [client?.budget, ...(client?.projects ?? []).map((p) => p.budget)]
+        .find((candidate) => candidate?.key === key);
+    if (!pool) return;
+
+    const request = (split, dryRun) => api.post('/budgets/bill', {
+        client_id: pool.client_id,
+        project_id: pool.project_id,
+        split,
+        dry_run: dryRun,
+    });
+
+    const node = document.createElement('div');
+    node.innerHTML = html`
+        <p class="muted">${client.name} · ${pool.project_name ?? t('budget.allProjects')}</p>
+        <label class="switch"><input type="checkbox" name="split" checked>
+            <span>${t('budget.splitLabel')}</span></label>
+        <p class="field__hint">${t('budget.splitHint')}</p>
+        <div data-preview class="muted">${t('common.loading')}</div>`;
+
+    const split = node.querySelector('[name=split]');
+    const preview = node.querySelector('[data-preview]');
+
+    const showPreview = async () => {
+        preview.textContent = t('common.loading');
+        try {
+            const { result } = await request(split.checked, true);
+            preview.innerHTML = html`
+                <p>${t('budget.billPreview', {
+                    packages: result.packages.length,
+                    entries: result.entries,
+                    hours: decimal(result.minutes / 60),
+                })}</p>
+                ${result.splits ? html`<p>${t('budget.billSplits', { count: result.splits })}</p>` : ''}
+                ${result.attached ? html`<p>${t('budget.billAttached', { count: result.attached })}</p>` : ''}
+                <ul class="budget__preview">
+                    ${result.packages.map((pkg) => html`
+                        <li>
+                            <span>${pkg.note || t('budget.packageFrom', { date: formatDate(pkg.starts_on) })}</span>
+                            <span class="muted">${t('budget.previewLine', {
+                                entries: pkg.entries, hours: decimal(pkg.minutes / 60), of: decimal(pkg.hours) })}</span>
+                        </li>`)}
+                </ul>`;
+        } catch (error) {
+            preview.textContent = error.message;
+        }
+    };
+    split.addEventListener('change', showPreview);
+    showPreview();
+
+    const saved = await saveDialog({
+        title: t('budget.billTitle'),
+        body: node,
+        saveLabel: t('budget.billConfirm'),
+        saveIcon: 'bill',
+        save: async () => (await request(split.checked, false)).result,
+    });
+    if (!saved) return;
+
+    invalidateTree();
+    toast(t('budget.billed', { packages: saved.packages.length, entries: saved.entries }), 'ok', 3000);
     await masterView.render(root);
 }
 

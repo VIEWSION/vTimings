@@ -95,6 +95,22 @@ export function invalidateTree() {
     state.tree = null;
 }
 
+/**
+ * Kunden, Projekte oder Teilprojekte nach "zuletzt aktiv": wer zuletzt
+ * gebucht hat, zuerst; ganz ohne Buchung ans Ende, danach alphabetisch als
+ * stabiler Tiebreak. Archivierte bleiben hinten, wie es die API liefert.
+ * Braucht `stats.last_at`, das der Baum (/api/tree) mitliefert.
+ */
+export function byActivity(list) {
+    return [...list].sort((a, b) => {
+        if (a.archived !== b.archived) return a.archived ? 1 : -1;
+        const at = a.stats?.last_at ? Date.parse(a.stats.last_at) : -Infinity;
+        const bt = b.stats?.last_at ? Date.parse(b.stats.last_at) : -Infinity;
+        if (at !== bt) return bt - at;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+}
+
 /** Flache Liste aller Teilprojekte für Auswahlfelder. */
 export function flatSubprojects() {
     const out = [];

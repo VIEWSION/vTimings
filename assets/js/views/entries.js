@@ -2,14 +2,14 @@
 // Leistungsnachweis und Export (früher eine eigene Seite "Auswertung").
 
 import { api } from '../api.js';
-import { state, loadTree, loadSettings, invalidateTree, flatSubprojects } from '../store.js';
+import { state, loadTree, loadSettings, invalidateTree, flatSubprojects, byActivity } from '../store.js';
 import { t } from '../i18n.js';
 import { enhanceCombos } from '../combo.js';
 import { icon } from '../icons.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
-    billedMark, calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
+    billedLabel, billedMark, calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
 } from './calendar.js';
 import { exportDialog, GROUP_KEYS, groupChips, reportDialog, statsHtml } from './output.js';
 import {
@@ -245,9 +245,13 @@ function colorAttr(color) {
     return color ? ` data-color="${esc(color)}"` : '';
 }
 
-/** Kunden-, Projekt- und Teilprojektauswahl befüllen und aufeinander abstimmen. */
+/**
+ * Kunden-, Projekt- und Teilprojektauswahl befüllen und aufeinander
+ * abstimmen. Kunden und Projekte stehen nach "zuletzt aktiv" – woran gerade
+ * gearbeitet wird, steht oben.
+ */
 function fillFilters(root) {
-    const clients = state.tree?.clients || [];
+    const clients = byActivity(state.tree?.clients || []);
     const clientSelect = root.querySelector('[name=client_id]');
 
     if (clientSelect) {
@@ -269,9 +273,9 @@ function fillProjects(root) {
     const clientId = Number(filters.client_id) || null;
     const select = root.querySelector('[name=project_id]');
 
-    const projects = clients
+    const projects = byActivity(clients
         .filter((c) => !clientId || c.id === clientId)
-        .flatMap((c) => c.projects.map((p) => ({ ...p, client: c.name })));
+        .flatMap((c) => c.projects.map((p) => ({ ...p, client: c.name }))));
 
     const many = clients.length > 1 && !clientId;
     select.innerHTML = `<option value="">${esc(t('entries.allProjects'))}</option>` + projects
@@ -1298,8 +1302,8 @@ async function editEntry(root, id, preset = null) {
     node.innerHTML = html`
         ${entry?.billed ? html`
             <p class="outscope__warn" data-billed-note>
-                ${t('entries.billedAt', { date: formatDateTime(entry.billed_at) })} –
-                ${t('entries.billedLocked')}</p>` : ''}
+                ${billedLabel(entry)} –
+                ${t(entry.budget_id ? 'entries.billedBudgetLocked' : 'entries.billedLocked')}</p>` : ''}
         <fieldset class="entryform__fields" data-fields>
         <div class="field">
             <span class="field__label">${t('common.subproject')}</span>
@@ -1341,7 +1345,7 @@ async function editEntry(root, id, preset = null) {
         <div class="filters__row">
             <label class="field field--inline">
                 <span class="field__label">${t('batch.status')}</span>
-                <select class="input" name="billed">
+                <select class="input" name="billed" ${entry?.budget_id ? 'disabled' : ''}>
                     <option value="0" ${entry?.billed ? '' : 'selected'}>${t('common.billedOpen')}</option>
                     <option value="1" ${entry?.billed ? 'selected' : ''}>${t('common.billedDone')}</option>
                 </select>

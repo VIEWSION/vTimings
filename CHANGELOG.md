@@ -12,6 +12,27 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.12.0] – 2026-09-29
+
+### Neu
+- Stundenpakete abrechnen (#6): In den Stammdaten rechnet „Aufgebrauchte
+  Pakete abrechnen“ volle oder abgelaufene Pakete der Reihe nach ab. Ihre
+  Einträge werden „abgerechnet“ und tragen das Paket. Eine Vorschau zeigt
+  vorher, wie viele Pakete und Einträge betroffen sind.
+- Fällt ein Eintrag über eine Paketgrenze, wird er dort geteilt
+  (voreingestellt, abwählbar). Jedes Paket geht dann genau auf.
+- Abgerechnete Pakete zählen fest mit ihren Einträgen. Nachträge fallen in
+  das laufende Paket. Stunden und Zeitraum sind gesperrt, Preis und Notiz
+  bleiben änderbar. „Abrechnung aufheben“ öffnet das zuletzt abgerechnete
+  Paket wieder.
+- Einträge zeigen, über welches Stundenpaket sie abgerechnet sind. Der
+  Status lässt sich dort nicht einzeln zurücksetzen.
+
+### Geändert
+- Einträge: Die Kunden- und Projektauswahl im Filter ist nach „zuletzt
+  aktiv“ sortiert. Wo zuletzt gebucht wurde, steht oben, archivierte stehen
+  hinten.
+
 ## [1.11.0] – 2026-09-29
 
 ### Neu

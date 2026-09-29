@@ -22,6 +22,9 @@ final class BudgetController
         $r->post('/api/budgets', [self::class, 'create']);
         $r->patch('/api/budgets/{id}', [self::class, 'update']);
         $r->delete('/api/budgets/{id}', [self::class, 'delete']);
+
+        $r->post('/api/budgets/bill', [self::class, 'bill']);
+        $r->delete('/api/budgets/{id}/bill', [self::class, 'unbill']);
     }
 
     /** ?client_id= grenzt auf einen Kunden ein, ?project_id= auf ein Kontingent. */
@@ -53,6 +56,30 @@ final class BudgetController
     {
         BudgetRepo::delete(self::id($req));
         return Response::json(['ok' => true]);
+    }
+
+    /**
+     * Aufgebrauchte Pakete eines Kontingents abrechnen.
+     * { client_id, project_id?, split = true, dry_run = false }
+     */
+    public static function bill(Request $req): array
+    {
+        $v = new Validator($req->body);
+        $clientId = $v->int('client_id', true, 1);
+        $raw = $req->body['project_id'] ?? null;
+        $projectId = ($raw === null || $raw === '') ? null : $v->int('project_id', true, 1);
+        $split = $v->bool('split', true);
+        $dryRun = $v->bool('dry_run', false);
+        $v->validate();
+
+        $result = BudgetRepo::bill((int) $clientId, $projectId, (bool) $split, (bool) $dryRun);
+        return ['result' => $result, 'dry_run' => (bool) $dryRun];
+    }
+
+    /** Abrechnung des zuletzt abgerechneten Pakets aufheben. */
+    public static function unbill(Request $req): array
+    {
+        return ['reopened' => BudgetRepo::unbill(self::id($req))];
     }
 
     private static function payload(Request $req, bool $creating): array

@@ -193,6 +193,9 @@ POST   /api/budgets                    { client_id, project_id?, hours, starts_o
                                          expires_on?, price?, note? }
 PATCH  /api/budgets/{id}
 DELETE /api/budgets/{id}
+POST   /api/budgets/bill               { client_id, project_id?, split = true, dry_run }
+                                         aufgebrauchte Pakete abrechnen (s. u.)
+DELETE /api/budgets/{id}/bill          Abrechnung des zuletzt abgerechneten Pakets aufheben
 
 GET    /api/entries?from&to&client_id&project_id&q&billed&group=day
 POST   /api/entries
@@ -251,6 +254,23 @@ rechnet ihn bei jedem Abruf aus:
 - Gerechnet wird nur in Stunden. `price` ist eine reine Information und für
   Kundenzugänge ohne Kostenrecht nicht sichtbar. Ein später erhöhter
   Stundensatz ändert am Kontingent nichts.
+
+**Abrechnen.** `POST /api/budgets/bill` rechnet die aufgebrauchten oder
+abgelaufenen Pakete eines Kontingents der Reihe nach ab. Ihre Einträge
+werden „abgerechnet“ und tragen das Paket in `budget_id`, so wie
+`invoice_id` die Rechnung. Einen neuen Status gibt es nicht.
+
+- Fällt ein Eintrag über eine Paketgrenze, teilt ihn `split` genau an der
+  Grenze in zwei Einträge. Jedes Paket geht dann auf die Minute auf.
+- Ohne `split` gehört der Eintrag ganz zu dem Paket, in dem er vollständig
+  bezahlt ist. Die Differenz geht als Übertrag (`carry_hours`) weiter.
+- Ab dann zählt ein abgerechnetes Paket fest mit genau seinen Einträgen. Ein
+  nachgetragener alter Eintrag fällt dadurch in das laufende Paket, statt
+  abgerechnete zu verschieben.
+- Über ein Paket abgerechnete Einträge lassen sich nicht einzeln wieder
+  öffnen, sondern nur über `DELETE /api/budgets/{id}/bill`. Das geht jeweils
+  für das zuletzt abgerechnete Paket.
+- Bei abgerechneten Paketen stehen Stunden, Zeitraum und Zuordnung fest.
 
 `/api/tree`, `/api/projects` und `/api/portal` liefern die Kontingente mit:
 als `budget` an Kunde und Projekt, im Portal als `budgets`. `progress` am

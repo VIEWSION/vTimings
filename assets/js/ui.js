@@ -183,16 +183,42 @@ export function showFieldErrors(root, error) {
  * Mit `remove` kommt links ein Löschen-Button dazu. Er fragt nach und
  * schließt den Dialog nur, wenn das Löschen geklappt hat.
  *
- * @returns Rückgabe von `save` (bzw. true), 'removed' nach dem Löschen oder
- *          null bei Abbruch.
+ * `actions` sind weitere Aktionen links daneben: `{ key, label, icon, run,
+ * confirm }` – `run` läuft nach der optionalen Rückfrage, bei Erfolg
+ * schließt der Dialog mit dem `key`.
+ *
+ * @returns Rückgabe von `save` (bzw. true), 'removed' nach dem Löschen, der
+ *          `key` einer Aktion oder null bei Abbruch.
  */
 export async function saveDialog({
     title, body, save, saveLabel = t('common.save'), saveIcon = 'check',
     remove = null, removeLabel = t('common.delete'), removeConfirm = null,
+    actions = [],
 }) {
     let result;
 
     const buttons = [];
+    for (const action of actions) {
+        buttons.push({
+            label: action.label,
+            icon: action.icon,
+            align: 'start',
+            value: '__action:' + action.key,
+            validate: async () => {
+                if (action.confirm && !await confirmDialog(action.confirm.title, action.confirm.text,
+                    action.label, action.icon)) {
+                    return false;
+                }
+                try {
+                    await action.run();
+                    return true;
+                } catch (error) {
+                    toastError(error);
+                    return false;
+                }
+            },
+        });
+    }
     if (remove) {
         buttons.push({
             label: removeLabel,
@@ -234,6 +260,7 @@ export async function saveDialog({
     const outcome = await dialog({ title, body, buttons });
 
     if (outcome === '__removed') return 'removed';
+    if (typeof outcome === 'string' && outcome.startsWith('__action:')) return outcome.slice(9);
     return outcome === '__saved' ? (result ?? true) : null;
 }
 

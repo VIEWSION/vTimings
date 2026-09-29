@@ -304,10 +304,17 @@ function eventTitle(entry) {
     return lines.join('\n');
 }
 
-/** "abgerechnet am …" – mit Rechnungsnummer, sofern es eine gibt. */
+/** "abgerechnet am …" – mit Rechnungsnummer bzw. Stundenpaket, sofern vorhanden. */
 export function billedLabel(entry) {
     const label = t('entries.billedAt', { date: formatDateTime(entry.billed_at) });
-    return entry.invoice_number ? `${label} · ${t('entries.invoice', { number: entry.invoice_number })}` : label;
+    if (entry.invoice_number) return `${label} · ${t('entries.invoice', { number: entry.invoice_number })}`;
+    if (entry.budget_id) return `${label} · ${t('entries.budget', { name: budgetName(entry) })}`;
+    return label;
+}
+
+/** Bezeichnung des Stundenpakets eines Eintrags: Notiz, sonst Beginn. */
+export function budgetName(entry) {
+    return entry.budget_note || t('budget.packageFrom', { date: formatDate(entry.budget_starts_on) });
 }
 
 /**

@@ -425,7 +425,9 @@ pre {
     border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 .batchbar[hidden] { display: none; }
-.batchbar__count { margin-right: auto; font-variant-numeric: tabular-nums; }
+.batchbar__info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-right: auto; }
+.batchbar__count { font-variant-numeric: tabular-nums; }
+.batchbar__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 @media (min-width: 900px) {
     .batchbar { bottom: 1rem; }
 }
@@ -444,6 +446,37 @@ pre {
 }
 
 .batch__pick { display: flex; gap: 0.35rem; align-items: center; }
+
+/* -- Summen, Leistungsnachweis, Export ------------------------------------ */
+
+.stats__head { padding: 0.65rem 1rem; }
+.stats__groups { align-items: center; }
+.stats__groups .field__label { margin-right: 0.25rem; }
+
+/* Kopf der Ausgabe-Dialoge: worauf sich Nachweis bzw. Export beziehen. */
+.outscope {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-bottom: 1rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+}
+.outscope__label { font-size: 0.8rem; color: var(--text-muted); }
+.outscope__warn,
+.dialog__body .outscope__warn {
+    margin: 0.25rem 0 0;
+    padding-left: 0.6rem;
+    border-left: 3px solid var(--warn);
+    color: var(--warn);
+    font-size: 0.88rem;
+}
+
+.outopts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin: 0.25rem 0 0.75rem; }
+.outformats { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding: 0; border: 0; }
+.outformats legend { padding: 0; margin-bottom: 0.4rem; }
 .batch__pick .input { flex: 1; }
 
 .summary {
@@ -721,7 +754,14 @@ pre {
 /* Die beiden Gruppen sind nur Klammern zum Aus- und Einblenden – sie sollen
    das Flex-Layout ihrer Zeile nicht verändern. */
 .filters__dates, .filters__ranges { display: contents; }
-.filters__tools { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
+.filters__tools {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+}
 
 /* Im Kalender geben Maßstab und Navigation den Zeitraum vor; die
    Datumsfelder und die Zeitraum-Schalter würden ihm widersprechen. Die

@@ -30,7 +30,7 @@ vervielfacht aus, die CPU ging hoch. Seitdem:
 1. **Nie `root.addEventListener(...)` direkt in einer View.** Immer
    `bindOnce(root, 'EindeutigerKey', 'click', handler)` aus `assets/js/ui.js`.
    Der Key muss je View eindeutig sein (wird als `data-bound<Key>`-Attribut
-   geführt). Alle bestehenden Views (`timer.js`, `master.js`, `reports.js`,
+   geführt). Alle bestehenden Views (`timer.js`, `master.js`, `entries.js`,
    `portal.js`) nutzen das – neue Views ebenso.
 2. **Der Router gibt jeder View ein frisches `#view`-Element**
    (`app.js`, `route()`): `app.querySelector('#view').replaceWith(host)`
@@ -57,7 +57,7 @@ immer in **beiden** Blöcken (`de` und `en`) eintragen; `de` ist die
 Leitsprache und dient als Rückfallebene. Konstanten auf Modulebene dürfen
 kein `t()` enthalten (das liefe einmal beim Laden und bliebe dann stehen) –
 stattdessen eine Funktion, siehe `ADMIN_NAV()` in `app.js` und
-`groupLabel()` in `reports.js`. Wo die gewählte Sprache gespeichert wird,
+`groupLabel()` in `views/output.js`. Wo die gewählte Sprache gespeichert wird,
 steht im README-Abschnitt „Sprache“.
 
 Formulare in Dialogen: `saveDialog()` + `showFieldErrors()` aus `ui.js`
@@ -75,6 +75,14 @@ Zugriff ist gegen privaten Modus abgesichert. Gelesen wird erst beim ersten
 `render()` (Flag `initialized`), nicht beim Laden des Moduls: vorher steht
 der Benutzer noch nicht fest. Relative Zeiträume als solche speichern (siehe
 `range` in `entries.js`), nicht als feste Daten.
+
+**Auswertung steckt in den Einträgen.** Die frühere Seite „Auswertung“
+gibt es nicht mehr (`#/auswertung` leitet um): Summen sind die dritte
+Darstellung neben Liste und Kalender, Leistungsnachweis und Export öffnen
+als Dialog (`views/output.js`) – entweder über die aktuellen Filter oder
+über die angehakten Einträge (`ids=1,2,3`). Die Dialoge nennen oben, worauf
+sie sich beziehen, und warnen bei aktiver Suche bzw. fehlendem Kunden.
+Nur für Administratoren.
 
 **Sammelbearbeiten** (`POST /api/entries/batch`) ändert bewusst nur
 Teilprojekt, Stundensatz und „abrechenbar“ – Zeiten, Dauer und Notizen

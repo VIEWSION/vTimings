@@ -104,7 +104,7 @@ dort räumen andere PHP-Anwendungen mit ihrer eigenen `gc_maxlifetime` auf
 (unter MAMP 24 Minuten) und nehmen fremde Sitzungen mit.
 
 **Filter und Ansichten** (Zeitraum, Kunde/Projekt, Suche, Status, Liste/
-Kalender, Auswertungs- und Druckoptionen, Stammdaten-Auswahl) merkt sich der
+Kalender/Summen, Gruppierung, Druck- und Exportoptionen, Stammdaten-Auswahl) merkt sich der
 Browser im `localStorage`, je Benutzer getrennt (`assets/js/prefs.js`). Ein
 Schnellzeitraum wie „Dieser Monat“ wird als solcher gespeichert und beim
 nächsten Aufruf neu berechnet. Der Ankertag im Kalender liegt im
@@ -199,6 +199,10 @@ GET    /api/stats?group_by=client|project|subproject|day|week|month|year
 GET    /api/export?format=timings-csv|csv|json
 GET    /api/export/formats
 GET    /report?template=&costs=&group_days=&times=&notes=&lang=
+
+       stats, export und report nehmen dieselben Filter wie /api/entries
+       (from, to, client_id, project_id, subproject_id, q, billed) oder
+       ids=12,15,19 für eine ausdrückliche Auswahl (höchstens 1000).
 
 GET    /api/portal                     Kundenportal
 CRUD   /api/users · /api/tokens        nur Administratoren

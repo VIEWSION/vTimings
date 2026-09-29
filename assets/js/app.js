@@ -8,7 +8,6 @@ import { clock, html } from './util.js';
 
 import { timerView } from './views/timer.js';
 import { entriesView } from './views/entries.js';
-import { reportsView } from './views/reports.js';
 import { masterView } from './views/master.js';
 import { settingsView } from './views/settings.js';
 import { portalView } from './views/portal.js';
@@ -16,12 +15,17 @@ import { portalView } from './views/portal.js';
 const ADMIN_ROUTES = {
     '/timer': timerView,
     '/eintraege': entriesView,
-    '/auswertung': reportsView,
     '/stammdaten': masterView,
     '/einstellungen': settingsView,
     // Nicht in der Navigation: Vorschau auf das Kundenportal, erreichbar über
     // die Stammdaten ("Kundenansicht"). So sieht man, was der Kunde sieht.
     '/uebersicht': portalView,
+};
+
+// Frühere Adressen, die es als eigene Seite nicht mehr gibt. Die Auswertung
+// steckt jetzt in den Einträgen (Darstellung "Summen").
+const REDIRECTS = {
+    '/auswertung': '/eintraege',
 };
 
 const CLIENT_ROUTES = {
@@ -34,7 +38,6 @@ const CLIENT_ROUTES = {
 const ADMIN_NAV = () => [
     { path: '/timer', label: t('nav.timer'), icon: '⏱' },
     { path: '/eintraege', label: t('nav.entries'), icon: '☰' },
-    { path: '/auswertung', label: t('nav.reports'), icon: '◪' },
     { path: '/stammdaten', label: t('nav.master'), icon: '▤' },
     { path: '/einstellungen', label: t('nav.more'), icon: '⚙' },
 ];
@@ -246,6 +249,11 @@ async function route() {
 
     const table = routes();
     const path = (location.hash.replace('#', '') || homePath()).split('?')[0];
+    if (REDIRECTS[path] && table[REDIRECTS[path]]) {
+        // replace() statt neuem Verlaufseintrag; der hashchange ruft route() erneut.
+        location.replace(`#${REDIRECTS[path]}`);
+        return;
+    }
     const view = table[path] || table[homePath()];
 
     for (const link of app.querySelectorAll('[data-path]')) {

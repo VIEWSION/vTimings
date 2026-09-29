@@ -129,7 +129,31 @@ final class ReportController
             'billable'      => isset($q['billable']) && $q['billable'] !== ''
                 ? in_array((string) $q['billable'], ['1', 'true'], true) : null,
             'type'          => $q['type'] ?? null,
+            'ids'           => self::ids($q['ids'] ?? null),
         ], static fn($value) => $value !== null && $value !== '');
+    }
+
+    /**
+     * Angehakte Einträge als kommagetrennte Liste (`ids=12,15,19`). Kommt als
+     * GET, weil Druckansicht und Download in einem neuen Tab bzw. als
+     * Navigation öffnen – daher die Obergrenze, damit die URL nicht an
+     * Server-Limits stößt.
+     *
+     * @return list<int>|null
+     */
+    private static function ids(mixed $raw): ?array
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (!is_string($raw) || !preg_match('/^\d+(,\d+)*$/', $raw)) {
+            throw HttpException::badRequest('Ungültige Auswahl.');
+        }
+        $ids = array_values(array_unique(array_map('intval', explode(',', $raw))));
+        if (count($ids) > 1000) {
+            throw HttpException::badRequest('Höchstens 1000 Einträge auf einmal.');
+        }
+        return $ids;
     }
 
     private static function flag(Request $req, string $name, bool $default): bool

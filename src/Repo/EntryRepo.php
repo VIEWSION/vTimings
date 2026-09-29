@@ -28,7 +28,7 @@ final class EntryRepo
      *   from?:string|null, to?:string|null,
      *   client_id?:int|null, project_id?:int|null, subproject_id?:int|null,
      *   q?:string, billed?:bool|null, type?:string|null, billable?:bool|null,
-     *   trashed?:bool, limit?:int, offset?:int, order?:string
+     *   ids?:list<int>, trashed?:bool, limit?:int, offset?:int, order?:string
      * } $opts
      * @return array{entries:list<array<string,mixed>>, total:int, totals:array<string,mixed>}
      */
@@ -549,6 +549,16 @@ final class EntryRepo
             }
             $where[] = 'e.started_at < :to';
             $params['to'] = $ts;
+        }
+        if (!empty($opts['ids'])) {
+            // Ausdrückliche Auswahl (angehakte Einträge). Scope und Papierkorb
+            // gelten weiter – eine fremde ID liefert schlicht nichts.
+            $names = [];
+            foreach (array_values($opts['ids']) as $i => $id) {
+                $names[] = ':id' . $i;
+                $params['id' . $i] = (int) $id;
+            }
+            $where[] = 'e.id IN (' . implode(', ', $names) . ')';
         }
         if (!empty($opts['client_id'])) {
             $where[] = 'p.client_id = :client_id';

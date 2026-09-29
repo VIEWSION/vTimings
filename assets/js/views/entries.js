@@ -1,4 +1,5 @@
-// Einträge: Filter, Tagesgruppen, Bearbeiten, Papierkorb.
+// Einträge: Filter, Tagesgruppen, Bearbeiten, Papierkorb – dazu Summen,
+// Leistungsnachweis und Export (früher eine eigene Seite "Auswertung").
 
 import { api } from '../api.js';
 import { state, loadTree, loadSettings, invalidateTree, flatSubprojects } from '../store.js';
@@ -8,6 +9,7 @@ import { bindOnce, confirmDialog, pickSubproject, saveDialog, toast, toastError 
 import {
     calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
 } from './calendar.js';
+import { exportDialog, GROUP_KEYS, groupChips, reportDialog, statsHtml } from './output.js';
 import {
     dateTimeToISO, dayLabel, debounce, esc, hhmm, html, minutesToTime, money, shiftDays,
     startOfMonth, startOfWeek, timeToMinutes, todayISO,
@@ -32,20 +34,29 @@ let range = null;
 
 let initialized = false;
 
-// Darstellung: Liste oder Kalender. Im Kalender geben Maßstab und Ankertag
-// den Zeitraum vor – die Datumsfelder des Filters werden dann von der
-// Navigation gefüllt statt von Hand. Der Ankertag ist immer ein konkreter
+// Darstellung: Liste, Kalender oder Summen. Im Kalender geben Maßstab und
+// Ankertag den Zeitraum vor – die Datumsfelder des Filters werden dann von
+// der Navigation gefüllt statt von Hand. Der Ankertag ist immer ein konkreter
 // Tag, auch im Monatsraster.
+const MODES = ['list', 'calendar', 'stats'];
 let mode = 'list';
 let scale = 'week';
 let anchor = todayISO();
+let groupBy = 'client';
 
-// Mehrfachauswahl für das Sammelbearbeiten. `selectable` sind die IDs, die in
-// der aktuellen Liste angehakt werden können (nicht abgerechnet, nicht im
-// Papierkorb) – was nach einem Filterwechsel nicht mehr zu sehen ist, fällt
-// aus der Auswahl, damit man nichts Unsichtbares mitändert.
+// Mehrfachauswahl für Sammelbearbeiten, Leistungsnachweis und Export.
+// `selectable` sind die IDs der aktuellen Liste (außerhalb des Papierkorbs) –
+// was nach einem Filterwechsel nicht mehr zu sehen ist, fällt aus der
+// Auswahl, damit man nichts Unsichtbares mitändert oder mit ausgibt.
+// Abgerechnete Einträge lassen sich anhaken (für einen erneuten Nachweis),
+// das Sammelbearbeiten überspringt sie.
 const selected = new Set();
 let selectable = [];
+
+// Zuletzt geladene Einträge und Summen – daraus nennen die Dialoge für
+// Leistungsnachweis und Export, worauf sie sich beziehen.
+const loaded = new Map();
+let lastTotals = null;
 
 /**
  * Gemerkten Zustand übernehmen. Erst beim ersten Aufruf, nicht beim Laden
@@ -54,8 +65,11 @@ let selectable = [];
  */
 function restore() {
     const view = loadPref('entriesView', {}, { legacyKey: 'vt.entriesView' }) || {};
-    mode = view.mode === 'calendar' ? 'calendar' : 'list';
+    mode = MODES.includes(view.mode) ? view.mode : 'list';
     scale = SCALES.includes(view.scale) ? view.scale : 'week';
+    // Beim ersten Mal die Gruppierung der früheren Seite "Auswertung" übernehmen.
+    const group = view.groupBy ?? loadPref('reports', null)?.filters?.group_by;
+    groupBy = GROUP_KEYS.includes(group) ? group : 'client';
 
     const day = loadPref('entriesAnchor', null, { session: true });
     if (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)) anchor = day;
@@ -73,7 +87,7 @@ function restore() {
 
 /** Darstellung und Maßstab überdauern die Sitzung – wie die Sprache. */
 function storeView() {
-    savePref('entriesView', { mode, scale });
+    savePref('entriesView', { mode, scale, groupBy });
     savePref('entriesAnchor', anchor, { session: true });
 }
 
@@ -161,6 +175,8 @@ export const entriesView = {
                                         data-view="list">${t('cal.viewList')}</button>
                                 <button type="button" class="seg__btn ${mode === 'calendar' ? 'is-active' : ''}"
                                         data-view="calendar">${t('cal.viewCalendar')}</button>
+                                <button type="button" class="seg__btn ${mode === 'stats' ? 'is-active' : ''}"
+                                        data-view="stats">${t('cal.viewStats')}</button>
                             </div>` : ''}
                         <div class="chips">
                             <span class="filters__ranges">
@@ -178,6 +194,8 @@ export const entriesView = {
                                 <label class="switch">
                                     <input type="checkbox" name="trashed"> <span>${t('entries.trash')}</span>
                                 </label>
+                                <button type="button" class="btn" data-output="report">${t('output.report')}</button>
+                                <button type="button" class="btn" data-output="export">${t('output.export')}</button>
                                 <button type="button" class="btn btn--primary" id="new-entry">${t('entries.add')}</button>
                             </div>` : ''}
                     </div>
@@ -290,6 +308,9 @@ function bind(root) {
         const view = event.target.closest('[data-view]');
         if (view) return setMode(root, view.dataset.view);
 
+        const output = event.target.closest('[data-output]');
+        if (output) return openOutput(output.dataset.output, filterScope());
+
         if (event.target.closest('[data-reset]')) {
             resetFilters(form);
             fillFilters(root);
@@ -339,6 +360,8 @@ function bind(root) {
             syncSelection(root);
         } else if (action === 'edit') {
             batchEdit(root);
+        } else if (action === 'report' || action === 'export') {
+            openOutput(action, selectionScope());
         }
     });
 
@@ -347,6 +370,13 @@ function bind(root) {
         if (edit) return editEntry(root, Number(edit.dataset.edit));
 
         if (mode === 'calendar' && onCalendarClick(root, event)) return;
+
+        const group = event.target.closest('[data-group]');
+        if (group) {
+            groupBy = group.dataset.group;
+            storeView();
+            return refresh(root);
+        }
 
         const del = event.target.closest('[data-delete]');
         if (del) {
@@ -520,8 +550,12 @@ async function refresh(root) {
         chip.classList.toggle('is-active', chip.dataset.range === range);
     }
     selectable = [];
+    loaded.clear();
+    lastTotals = null;
 
     try {
+        if (mode === 'stats') return await refreshStats(host);
+
         const data = await api.get('/entries', {
             ...filters,
             group: 'day',
@@ -529,6 +563,10 @@ async function refresh(root) {
             // ohnehin nur einen Ausschnitt und meldet den Rest.
             limit: mode === 'calendar' ? 1000 : 500,
         });
+        lastTotals = data.totals;
+        for (const day of data.days) {
+            for (const entry of day.entries) loaded.set(entry.id, entry);
+        }
 
         if (mode === 'calendar') {
             // Ein leerer Kalender ist kein Sonderfall – das leere Raster ist
@@ -545,11 +583,7 @@ async function refresh(root) {
             return;
         }
 
-        if (canSelect()) {
-            selectable = data.days.flatMap((day) => day.entries)
-                .filter((entry) => !entry.billed)
-                .map((entry) => entry.id);
-        }
+        if (canSelect()) selectable = [...loaded.keys()];
         host.innerHTML = html`${summary(data)}${data.days.map(dayGroup)}`;
     } catch (error) {
         toastError(error);
@@ -557,6 +591,25 @@ async function refresh(root) {
     } finally {
         syncSelection(root);
     }
+}
+
+/**
+ * Summen nach der gewählten Gruppierung – dieselben Filter wie die Liste.
+ * Der Papierkorb hat keine Summen: die zählen nur, was auch abgerechnet
+ * werden kann.
+ */
+async function refreshStats(host) {
+    if (filters.trashed === '1') {
+        host.innerHTML = html`<div class="card"><p class="muted card__body">${t('entries.statsTrash')}</p></div>`;
+        return;
+    }
+
+    const data = await api.get('/stats', { ...queryFilters(), group_by: groupBy });
+    lastTotals = data.totals;
+    host.innerHTML = html`
+        ${summary(data)}
+        <div class="card stats__head">${groupChips(groupBy)}</div>
+        ${statsHtml(data, groupBy)}`;
 }
 
 /** Ankreuzen nur in der Liste und außerhalb des Papierkorbs. */
@@ -591,11 +644,66 @@ function syncSelection(root) {
     if (bar.hidden) return;
 
     bar.innerHTML = html`
-        <strong class="batchbar__count">${t('batch.selected', { count: selected.size })}</strong>
-        ${selected.size < selectable.length
-            ? html`<button type="button" class="chip" data-batch="all">${t('batch.selectAll')}</button>` : ''}
-        <button type="button" class="chip" data-batch="clear">${t('batch.clear')}</button>
-        <button type="button" class="btn btn--primary" data-batch="edit">${t('batch.edit')}</button>`;
+        <span class="batchbar__info">
+            <strong class="batchbar__count">${t('batch.selected', { count: selected.size })}</strong>
+            ${selected.size < selectable.length
+                ? html`<button type="button" class="chip" data-batch="all">${t('batch.selectAll')}</button>` : ''}
+            <button type="button" class="chip" data-batch="clear">${t('batch.clear')}</button>
+        </span>
+        <span class="batchbar__actions">
+            <button type="button" class="btn" data-batch="report">${t('output.report')}</button>
+            <button type="button" class="btn" data-batch="export">${t('output.export')}</button>
+            <button type="button" class="btn btn--primary" data-batch="edit">${t('batch.edit')}</button>
+        </span>`;
+}
+
+// -- Leistungsnachweis und Export -------------------------------------------
+
+/** Filter in der Form, die /stats, /report und /export erwarten. */
+function queryFilters() {
+    const { trashed, ...rest } = filters;
+    return rest;
+}
+
+/** Ausgabe über die aktuellen Filter (Knöpfe in der Filterleiste). */
+function filterScope() {
+    const warnings = [];
+    if (filters.q.trim()) warnings.push(t('output.warnSearch', { q: filters.q.trim() }));
+    if (!filters.client_id && showClientFilter()) warnings.push(t('output.warnNoClient'));
+
+    return {
+        selection: false,
+        count: lastTotals?.entries ?? 0,
+        hhmm: lastTotals?.hhmm ?? hhmm(0),
+        query: queryFilters(),
+        warnings,
+    };
+}
+
+/** Ausgabe über die angehakten Einträge (Knöpfe in der Auswahlleiste). */
+function selectionScope() {
+    const entries = [...selected].map((id) => loaded.get(id)).filter(Boolean);
+    const clients = new Set(entries.map((entry) => entry.client_id));
+    const warnings = clients.size > 1 ? [t('output.warnMultiClient', { count: clients.size })] : [];
+
+    return {
+        selection: true,
+        count: entries.length,
+        hhmm: hhmm(entries.reduce((sum, entry) => sum + entry.duration_min, 0)),
+        // Nur die IDs, keine Filter: Zeitraum und Kunde des Nachweises ergeben
+        // sich dann aus den Einträgen selbst, nicht aus dem breiteren Filter.
+        query: { ids: entries.map((entry) => entry.id).join(',') },
+        warnings,
+    };
+}
+
+async function openOutput(kind, scope) {
+    try {
+        if (kind === 'report') await reportDialog(scope);
+        else await exportDialog(scope);
+    } catch (error) {
+        toastError(error);
+    }
 }
 
 function summary(data) {
@@ -612,7 +720,7 @@ function summary(data) {
 }
 
 function dayGroup(day) {
-    const withBoxes = canSelect() && day.entries.some((entry) => !entry.billed);
+    const withBoxes = canSelect();
 
     return html`
         <section class="card daygroup" data-day="${day.date}">
@@ -634,9 +742,8 @@ function row(entry) {
     return html`
         <li class="entry ${entry.billed ? 'entry--billed' : ''} ${check ? 'entry--check' : ''}">
             ${check ? html`
-                <label class="check entry__check" title="${entry.billed ? t('batch.locked') : t('batch.selectEntry')}">
-                    <input type="checkbox" data-select="${entry.id}" aria-label="${t('batch.selectEntry')}"
-                        ${entry.billed ? { __raw: 'disabled' } : ''}>
+                <label class="check entry__check" title="${t('batch.selectEntry')}">
+                    <input type="checkbox" data-select="${entry.id}" aria-label="${t('batch.selectEntry')}">
                 </label>` : ''}
             <span class="dot" style="background:${entry.color || 'var(--border)'}"></span>
             <span class="entry__times">
@@ -677,8 +784,14 @@ function row(entry) {
  * verschieden, und der Server nimmt sie in diesem Weg auch nicht an.
  */
 async function batchEdit(root) {
-    const ids = [...selected];
-    if (!ids.length) return;
+    // Abgerechnete Einträge dürfen in der Auswahl stehen (für einen erneuten
+    // Nachweis), geändert werden sie nicht – das würde die Rechnung verfälschen.
+    const billed = [...selected].filter((id) => loaded.get(id)?.billed).length;
+    const ids = [...selected].filter((id) => !loaded.get(id)?.billed);
+    if (!ids.length) {
+        toast(t('batch.onlyBilled'), 'info', 5000);
+        return;
+    }
 
     await loadTree();
     let subprojectId = null;
@@ -686,6 +799,8 @@ async function batchEdit(root) {
     const node = document.createElement('div');
     node.innerHTML = html`
         <p class="muted">${t('batch.intro')}</p>
+        ${billed ? html`<p class="outscope__warn">
+            ${billed === 1 ? t('batch.billedSkippedOne') : t('batch.billedSkipped', { count: billed })}</p>` : ''}
         <div class="field">
             <span class="field__label">${t('batch.moveTo')}</span>
             <div class="batch__pick">

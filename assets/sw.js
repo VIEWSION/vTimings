@@ -23,7 +23,7 @@ const SHELL = [
     BASE + 'assets/js/views/timer.js',
     BASE + 'assets/js/views/entries.js',
     BASE + 'assets/js/views/calendar.js',
-    BASE + 'assets/js/views/reports.js',
+    BASE + 'assets/js/views/output.js',
     BASE + 'assets/js/views/master.js',
     BASE + 'assets/js/views/settings.js',
     BASE + 'assets/js/views/users.js',

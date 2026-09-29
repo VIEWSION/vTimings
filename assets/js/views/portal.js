@@ -66,7 +66,11 @@ function paint(root) {
     const project = selectable ? data.projects.find((p) => p.id === selected) ?? null : null;
     const entries = project ? data.entries.filter((e) => e.project_id === project.id) : data.entries;
     const totals = project ? projectTotals(project, entries, costs) : data.totals;
-    const withBudget = (project ? [project] : data.projects).filter((p) => p.progress);
+    // Mit gewähltem Projekt nur dessen eigenes Kontingent; ein Kontingent
+    // für den ganzen Kunden gilt dann nicht eindeutig und bleibt weg.
+    const budgets = project
+        ? data.budgets.filter((b) => b.project_id === project.id)
+        : data.budgets;
 
     root.innerHTML = html`
         <section class="stack">
@@ -123,13 +127,12 @@ function paint(root) {
                     ${dailyChart(project)}
                 </section>
 
-                ${withBudget.length ? html`
+                ${budgets.length ? html`
                     <section class="card">
                         <header class="card__head">
-                            <h2>${t('portal.progress')}</h2>
-                            <span class="muted">${t('portal.progressHint')}</span>
+                            <h2>${t('portal.budgets')}</h2>
                         </header>
-                        <ul class="budgets">${withBudget.map(budgetRow)}</ul>
+                        <ul class="budgets">${budgets.map(budgetRow)}</ul>
                     </section>` : ''}
 
                 <section class="card">
@@ -233,27 +236,49 @@ function entryRow(entry, costs) {
         </li>`;
 }
 
-function budgetRow(project) {
-    const p = project.progress;
-    const over = p.percent > 100;
+/**
+ * Ein Kontingent: Balken des laufenden Pakets, darunter das Guthaben über
+ * alle offenen Pakete bzw. die Überziehung. Die einzelnen Pakete stehen
+ * zusammengeklappt darunter.
+ */
+function budgetRow(pool) {
+    const p = pool.progress;
+    const current = pool.packages.find((pkg) => pkg.id === pool.current_id);
+    const over = pool.balance_hours < 0;
 
     return html`
         <li class="budgets__item">
             <div class="budgets__head">
-                <strong>${project.name}</strong>
+                <strong>${pool.project_name ?? t('portal.budgetAll')}</strong>
                 <span class="${over ? 'is-over' : 'muted'}">
                     ${decimal(p.used_hours)} / ${decimal(p.budget_hours)} h (${decimal(p.percent)} %)
                 </span>
             </div>
             <span class="progress progress--big">
-                <span class="progress__bar ${over ? 'is-over' : ''}"
+                <span class="progress__bar ${p.percent > 100 ? 'is-over' : ''}"
                       style="width:${Math.min(100, p.percent)}%"></span>
             </span>
             <span class="muted budgets__rest">
+                ${current ? t('portal.currentPackage', {
+                    hours: decimal(current.hours), from: formatDate(current.starts_on) }) + ' · ' : ''}
                 ${over
-                    ? t('portal.overBudget', { hours: decimal(Math.abs(p.remaining_hours)) })
-                    : t('portal.remaining', { hours: decimal(p.remaining_hours) })}
+                    ? t('portal.overBudget', { hours: decimal(-pool.balance_hours) })
+                    : t('portal.remaining', { hours: decimal(pool.balance_hours) })}
             </span>
+            ${pool.packages.length > 1 ? html`
+                <details class="budgets__all">
+                    <summary class="muted">${t('portal.packages', { count: pool.packages.length })}</summary>
+                    <ul class="budgets__packages">
+                        ${[...pool.packages].reverse().map((pkg) => html`
+                            <li>
+                                <span>${formatDate(pkg.starts_on)}${pkg.expires_on ? ' – ' + formatDate(pkg.expires_on) : ''}</span>
+                                <span class="muted">
+                                    ${t('budget.usedOf', { used: decimal(pkg.used_hours), hours: decimal(pkg.hours) })}
+                                    · ${t('budget.status.' + pkg.status)}
+                                </span>
+                            </li>`)}
+                    </ul>
+                </details>` : ''}
         </li>`;
 }
 

@@ -7,7 +7,7 @@ import { LANGS, t } from '../i18n.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
 import { icon } from '../icons.js';
-import { esc, html, money } from '../util.js';
+import { decimal, esc, formatDate, html, money, todayISO } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
 
@@ -152,6 +152,7 @@ function drawClients(root, list) {
                         <span class="row__main">
                             <strong>${client.name}</strong>
                             ${{ __raw: statLine(client) }}
+                            ${progressBar(client.budget)}
                         </span>
                         <span class="row__meta">${client.effective_rate} €</span>
                     </button>
@@ -175,8 +176,11 @@ function drawProjects(root) {
             <button class="btn btn--ghost btn--small" data-edit-client="${client.id}">${t('master.editClient')}</button>
             <a class="btn btn--ghost btn--small" href="#/uebersicht?client_id=${client.id}"
                title="${t('master.clientViewHint')}">${t('master.clientView')}</a>
+            <button class="btn btn--ghost btn--small" data-add-budget="client"
+                    title="${t('budget.addClientHint')}">${icon('plus', 14)} ${t('budget.package')}</button>
             <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">${t('common.delete')}</button>
         </div>
+        ${budgetSection(client.budget)}
         <ul class="rows">
             ${sortRows(client.projects).map((project) => html`
                 <li>
@@ -186,11 +190,7 @@ function drawProjects(root) {
                         <span class="row__main">
                             <strong>${project.name}</strong>
                             ${{ __raw: statLine(project) }}
-                            ${project.progress ? html`
-                                <span class="progress" title="${t('master.budgetTitle', {
-                                    used: project.progress.used_hours, budget: project.progress.budget_hours })}">
-                                    <span class="progress__bar" style="width:${Math.min(100, project.progress.percent)}%"></span>
-                                </span>` : ''}
+                            ${progressBar(project.budget)}
                         </span>
                         <span class="row__meta">${project.effective_rate} €</span>
                     </button>
@@ -212,18 +212,11 @@ function drawSubprojects(root) {
         ${{ __raw: columnHead(project.name, t('master.projects'), t('master.addSubproject'), 'data-add-subproject') }}
         <div class="column__tools">
             <button class="btn btn--ghost btn--small" data-edit-project="${project.id}">${t('master.editProject')}</button>
+            <button class="btn btn--ghost btn--small" data-add-budget="project"
+                    title="${t('budget.addProjectHint')}">${icon('plus', 14)} ${t('budget.package')}</button>
             <button class="btn btn--ghost btn--small" data-delete-project="${project.id}">${t('common.delete')}</button>
         </div>
-        ${project.progress ? html`
-            <div class="budget">
-                ${t('master.budgetOf', {
-                    used: project.progress.used_hours, budget: project.progress.budget_hours })}
-                <span class="muted">${t('master.budgetLeft', { rest: project.progress.remaining_hours })}</span>
-                <span class="progress">
-                    <span class="progress__bar ${project.progress.percent > 100 ? 'is-over' : ''}"
-                          style="width:${Math.min(100, project.progress.percent)}%"></span>
-                </span>
-            </div>` : ''}
+        ${budgetSection(project.budget)}
         <ul class="rows">
             ${sortRows(project.subprojects).map((sub) => html`
                 <li>
@@ -241,6 +234,81 @@ function drawSubprojects(root) {
                 </li>`)}
         </ul>
         ${project.subprojects.length ? '' : html`<p class="muted column__empty">${t('master.noSubprojects')}</p>`}`;
+}
+
+// -- Stundenkontingente -----------------------------------------------------
+
+/** Balken des laufenden Pakets für Kunden- und Projektzeilen. */
+function progressBar(pool) {
+    if (!pool) return '';
+    const p = pool.progress;
+    return html`
+        <span class="progress" title="${t('budget.currentTitle', {
+            used: decimal(p.used_hours), hours: decimal(p.budget_hours) })}">
+            <span class="progress__bar ${p.percent > 100 ? 'is-over' : ''}"
+                  style="width:${Math.min(100, p.percent)}%"></span>
+        </span>`;
+}
+
+function balanceLine(pool) {
+    return pool.balance_hours < 0
+        ? html`<span class="is-over">${t('budget.overdrawn', { hours: decimal(-pool.balance_hours) })}</span>`
+        : html`<span class="muted">${t('budget.balance', { hours: decimal(pool.balance_hours) })}</span>`;
+}
+
+/**
+ * Kontingent mit seinen Paketen. Laufende und vorrätige Pakete stehen offen
+ * in zeitlicher Reihenfolge, aufgebrauchte und abgelaufene zusammengeklappt
+ * darunter (jüngstes zuerst).
+ */
+function budgetSection(pool) {
+    if (!pool) return '';
+
+    const finished = (pkg) => pkg.status === 'used' || pkg.status === 'expired';
+    const live = pool.packages.filter((pkg) => !finished(pkg));
+    const done = pool.packages.filter(finished).reverse();
+
+    return html`
+        <section class="budget">
+            <div class="budget__head">
+                <strong>${t(pool.project_id ? 'budget.title' : 'budget.titleClient')}</strong>
+                ${balanceLine(pool)}
+            </div>
+            ${progressBar(pool)}
+            ${pool.balance_hours < 0 ? html`
+                <p class="budget__hint muted">${t('budget.overdrawnHint')}</p>` : ''}
+            ${pool.project_id ? '' : html`
+                <p class="budget__hint muted">${t('budget.clientScope')}</p>`}
+            ${live.length ? html`<ul class="budget__list">${live.map(packageRow)}</ul>` : ''}
+            ${done.length ? html`
+                <details class="budget__done">
+                    <summary class="muted">${t('budget.finished', { count: done.length })}</summary>
+                    <ul class="budget__list">${done.map(packageRow)}</ul>
+                </details>` : ''}
+        </section>`;
+}
+
+function packageRow(pkg) {
+    const period = pkg.expires_on
+        ? t('budget.period', { from: formatDate(pkg.starts_on), to: formatDate(pkg.expires_on) })
+        : t('budget.since', { from: formatDate(pkg.starts_on) });
+
+    return html`
+        <li>
+            <button type="button" class="budget__pkg is-${pkg.status}" data-edit-budget="${pkg.id}"
+                    title="${t('budget.edit')}">
+                <span class="budget__pkg-main">
+                    <strong>${decimal(pkg.hours)} h</strong>
+                    <span class="muted">${period}</span>
+                    ${pkg.note ? html`<span class="muted budget__note">${pkg.note}</span>` : ''}
+                </span>
+                <span class="budget__pkg-meta">
+                    <span>${t('budget.usedOf', { used: decimal(pkg.used_hours), hours: decimal(pkg.hours) })}</span>
+                    <span class="budget__status">${t('budget.status.' + pkg.status)}${pkg.expired_hours
+                        ? ' · ' + t('budget.lapsed', { hours: decimal(pkg.expired_hours) }) : ''}</span>
+                </span>
+            </button>
+        </li>`;
 }
 
 // -- Verhalten --------------------------------------------------------------
@@ -294,6 +362,11 @@ function bind(root) {
         if (target('add-client')) return editClient(root, null);
         if (target('add-project')) return editProject(root, null);
         if (target('add-subproject')) return editSubproject(root, null);
+
+        const addB = target('add-budget');
+        if (addB) return editBudget(root, null, addB.dataset.addBudget);
+        const editB = target('edit-budget');
+        if (editB) return editBudget(root, Number(editB.dataset.editBudget));
 
         const editC = target('edit-client');
         if (editC) return editClient(root, Number(editC.dataset.editClient));
@@ -398,9 +471,6 @@ async function editProject(root, id) {
                 <input class="input" type="number" name="rate" step="0.01" min="0"
                     value="${project?.rate ?? ''}"
                     placeholder="${t('master.rateInherits', { rate: client.effective_rate })}"></label>
-            <label class="field field--inline"><span class="field__label">${t('master.budget')}</span>
-                <input class="input" type="number" name="budget_hours" step="0.25" min="0"
-                    value="${project?.budget_hours ?? ''}" placeholder="${t('master.budgetNone')}"></label>
         </div>
         <label class="switch"><input type="checkbox" name="archived" ${project?.archived ? 'checked' : ''}>
             <span>${t('common.archivedLabel')}</span></label>`;
@@ -417,7 +487,6 @@ async function editProject(root, id) {
             name: get('name').value.trim(),
             color: get('color').value,
             rate: get('rate').value === '' ? null : Number(get('rate').value),
-            budget_hours: get('budget_hours').value === '' ? null : Number(get('budget_hours').value),
             archived: get('archived').checked,
         }),
     });
@@ -454,6 +523,77 @@ async function editSubproject(root, id) {
             archived: get('archived').checked,
         }),
     });
+}
+
+/**
+ * Stundenpaket anlegen oder bearbeiten.
+ *
+ * @param level 'client' (Kundenkontingent) oder 'project' – nur beim Anlegen;
+ *              ein bestehendes Paket bringt seine Zuordnung mit.
+ */
+async function editBudget(root, id, level = 'project') {
+    const client = currentClient();
+    if (!client) return;
+
+    let pkg = null;
+    if (id) {
+        const pools = [client.budget, ...client.projects.map((p) => p.budget)].filter(Boolean);
+        pkg = pools.flatMap((pool) => pool.packages).find((p) => p.id === id) ?? null;
+        if (!pkg) return;
+        level = pkg.project_id ? 'project' : 'client';
+    }
+    const project = level === 'project'
+        ? (pkg ? client.projects.find((p) => p.id === pkg.project_id) : currentProject())
+        : null;
+    if (level === 'project' && !project) return;
+
+    const node = document.createElement('div');
+    node.innerHTML = html`
+        <p class="muted">${project ? `${client.name} · ${project.name}` : `${client.name} · ${t('budget.allProjects')}`}</p>
+        <div class="filters__row">
+            <label class="field field--inline"><span class="field__label">${t('budget.hours')}</span>
+                <input class="input" type="number" name="hours" step="0.25" min="0.25"
+                    value="${pkg?.hours ?? ''}" required></label>
+            <label class="field field--inline"><span class="field__label">${t('budget.price')}</span>
+                <input class="input" type="number" name="price" step="0.01" min="0"
+                    value="${pkg?.price ?? ''}" placeholder="${t('budget.optional')}"></label>
+        </div>
+        <div class="filters__row">
+            <label class="field field--inline"><span class="field__label">${t('budget.startsOn')}</span>
+                <input class="input" type="date" name="starts_on" value="${pkg?.starts_on ?? todayISO()}" required></label>
+            <label class="field field--inline"><span class="field__label">${t('budget.expiresOn')}</span>
+                <input class="input" type="date" name="expires_on" value="${pkg?.expires_on ?? ''}"></label>
+        </div>
+        <p class="field__hint">${t('budget.formHint')}</p>
+        <label class="field"><span class="field__label">${t('common.note')}</span>
+            <input class="input" name="note" value="${pkg?.note ?? ''}" placeholder="${t('budget.notePlaceholder')}"></label>`;
+
+    const get = (n) => node.querySelector(`[name=${n}]`);
+
+    const saved = await saveDialog({
+        title: id ? t('budget.edit') : t(level === 'client' ? 'budget.addClient' : 'budget.addProject'),
+        body: node,
+        save: async () => {
+            const payload = {
+                client_id: client.id,
+                project_id: project?.id ?? null,
+                hours: get('hours').value === '' ? null : Number(get('hours').value),
+                price: get('price').value === '' ? null : Number(get('price').value),
+                starts_on: get('starts_on').value,
+                expires_on: get('expires_on').value || null,
+                note: get('note').value,
+            };
+            if (id) await api.patch(`/budgets/${id}`, payload);
+            else await api.post('/budgets', payload);
+        },
+        remove: id ? () => api.delete(`/budgets/${id}`) : null,
+        removeConfirm: { title: t('budget.deleteTitle'), text: t('budget.deleteText') },
+    });
+    if (!saved) return;
+
+    invalidateTree();
+    toast(t(saved === 'removed' ? 'common.deleted' : 'common.saved'), 'ok', 2000);
+    await masterView.render(root);
 }
 
 /**

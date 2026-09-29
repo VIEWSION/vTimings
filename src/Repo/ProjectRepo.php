@@ -64,7 +64,19 @@ final class ProjectRepo
             $params
         );
 
-        return array_map([self::class, 'hydrate'], $rows);
+        $projects = array_map([self::class, 'hydrate'], $rows);
+
+        if ($opts['stats'] ?? true) {
+            $pools = BudgetRepo::poolsByKey(!empty($opts['client_id']) ? (int) $opts['client_id'] : null);
+            foreach ($projects as &$project) {
+                $pool = $pools[BudgetRepo::key($project['client_id'], $project['id'])] ?? null;
+                $project['budget'] = $pool;
+                $project['progress'] = $pool['progress'] ?? null;
+            }
+            unset($project);
+        }
+
+        return $projects;
     }
 
     public static function find(int $id, bool $orFail = false): ?array
@@ -102,7 +114,6 @@ final class ProjectRepo
             'name'         => $data['name'],
             'color'        => $data['color'] ?? null,
             'rate'         => $data['rate'] ?? null,
-            'budget_hours' => $data['budget_hours'] ?? null,
             'note'         => $data['note'] ?? '',
             'archived'     => !empty($data['archived']) ? 1 : 0,
             'sort'         => (int) ($data['sort'] ?? 0),
@@ -126,7 +137,7 @@ final class ProjectRepo
         }
 
         $fields = array_intersect_key($data, array_flip([
-            'client_id', 'name', 'color', 'rate', 'budget_hours', 'note', 'archived', 'sort',
+            'client_id', 'name', 'color', 'rate', 'note', 'archived', 'sort',
         ]));
         if (isset($fields['archived'])) {
             $fields['archived'] = $fields['archived'] ? 1 : 0;
@@ -182,7 +193,6 @@ final class ProjectRepo
             'color'          => $row['color'] ?? $row['client_color'] ?? null,
             'own_color'      => $row['color'],
             'currency'       => (string) ($row['currency'] ?? 'EUR'),
-            'budget_hours'   => $row['budget_hours'] === null ? null : (float) $row['budget_hours'],
             'note'           => (string) $row['note'],
             'archived'       => (bool) $row['archived'],
             'sort'           => (int) $row['sort'],
@@ -206,17 +216,6 @@ final class ProjectRepo
             ];
             if ($showCosts) {
                 $out['stats']['amount'] = round((float) $row['total_amount'], 2);
-            }
-
-            // Fortschritt gegen das Stundenkontingent
-            if ($out['budget_hours'] !== null && $out['budget_hours'] > 0) {
-                $used = $minutes / 60;
-                $out['progress'] = [
-                    'budget_hours'    => $out['budget_hours'],
-                    'used_hours'      => round($used, 2),
-                    'remaining_hours' => round($out['budget_hours'] - $used, 2),
-                    'percent'         => round($used / $out['budget_hours'] * 100, 1),
-                ];
             }
         }
 

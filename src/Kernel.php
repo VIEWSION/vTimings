@@ -217,6 +217,7 @@ final class Kernel
 
         // -- Stammdaten -----------------------------------------------------
         Controller\MasterDataController::register($r);
+        Controller\BudgetController::register($r);
 
         // -- Einträge und Timer ---------------------------------------------
         Controller\EntryController::register($r);

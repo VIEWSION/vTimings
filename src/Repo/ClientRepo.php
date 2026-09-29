@@ -61,7 +61,17 @@ final class ClientRepo
             $params
         );
 
-        return array_map([self::class, 'hydrate'], $rows);
+        $clients = array_map([self::class, 'hydrate'], $rows);
+
+        if ($opts['stats'] ?? true) {
+            $pools = BudgetRepo::poolsByKey();
+            foreach ($clients as &$client) {
+                $client['budget'] = $pools[BudgetRepo::key($client['id'], null)] ?? null;
+            }
+            unset($client);
+        }
+
+        return $clients;
     }
 
     public static function find(int $id, bool $orFail = false): ?array

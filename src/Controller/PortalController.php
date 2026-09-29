@@ -7,6 +7,7 @@ use VT\Auth\Auth;
 use VT\Http\HttpException;
 use VT\Http\Request;
 use VT\Http\Router;
+use VT\Repo\BudgetRepo;
 use VT\Repo\ClientRepo;
 use VT\Repo\EntryRepo;
 use VT\Repo\ProjectRepo;
@@ -93,6 +94,9 @@ final class PortalController
             'projects' => self::involvedProjects($clientId, $entries, $showCosts),
             'days'     => self::dailyBuckets($from, $to, $entries, $showCosts),
             'entries'  => $entries,
+            // Kontingente unabhängig vom Zeitraum – ein Paket wird über
+            // Monate verbraucht.
+            'budgets'  => BudgetRepo::pools($clientId),
             'totals'   => self::sum($entries, $showCosts),
             'lifetime' => EntryRepo::list(['client_id' => $clientId, 'limit' => 1])['totals'],
             'can_see_costs' => $showCosts,
@@ -102,8 +106,7 @@ final class PortalController
 
     /**
      * Nur Projekte, auf die im Zeitraum tatsächlich gebucht wurde – sortiert
-     * nach Aufwand. Der Budget-Fortschritt bleibt am Gesamtverbrauch, denn
-     * ein Kontingent wird über die Projektlaufzeit aufgebraucht.
+     * nach Aufwand. Die Kontingente stehen getrennt in 'budgets'.
      *
      * @param list<array<string,mixed>> $entries
      * @return list<array<string,mixed>>
@@ -141,7 +144,6 @@ final class PortalController
                 'hhmm'       => Clock::hhmm($values['minutes']),
                 'decimal'    => Clock::decimal($values['minutes']),
                 'entries'    => $values['entries'],
-                'progress'   => $project['progress'] ?? null,
             ];
             if ($showCosts) {
                 $row['amount'] = round($values['amount'], 2);

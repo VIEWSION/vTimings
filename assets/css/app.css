@@ -1266,7 +1266,7 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 }
 .column__head h3 { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .column__back { display: inline-flex; font-size: 1.2rem; }
-.column__tools { display: flex; gap: 0.35rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+.column__tools { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
 .column__empty { padding: 1.25rem; margin: 0; text-align: center; }
 
 .row {
@@ -1329,6 +1329,45 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
     font-size: 0.85rem;
 }
 .budget strong { font-variant-numeric: tabular-nums; }
+.budget__head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: space-between;
+    align-items: baseline;
+}
+.budget__head span { font-variant-numeric: tabular-nums; }
+.budget .is-over { color: var(--danger); font-weight: 600; }
+.budget__hint { margin: 0.35rem 0 0; font-size: 0.78rem; }
+.budget__list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.budget__pkg {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.budget__pkg:hover { background: var(--surface-2); }
+.budget__pkg.is-active { border-color: var(--accent); }
+.budget__pkg.is-used,
+.budget__pkg.is-expired { opacity: 0.75; }
+.budget__pkg-main,
+.budget__pkg-meta { display: flex; flex-direction: column; min-width: 0; }
+.budget__pkg-meta { align-items: flex-end; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.budget__pkg .muted,
+.budget__status { font-size: 0.78rem; }
+.budget__status { color: var(--text-muted); }
+.budget__pkg.is-active .budget__status { color: var(--accent); font-weight: 600; }
+.budget__note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.budget__done { margin-top: 0.5rem; }
+.budget__done summary { cursor: pointer; font-size: 0.8rem; }
 
 /* -- Kundenportal --------------------------------------------------------- */
 
@@ -1384,6 +1423,17 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 .budgets__head span { font-variant-numeric: tabular-nums; font-size: 0.85rem; }
 .budgets__head .is-over { color: var(--danger); font-weight: 600; }
 .budgets__rest { display: block; margin-top: 0.3rem; font-size: 0.78rem; }
+.budgets__all { margin-top: 0.5rem; }
+.budgets__all summary { cursor: pointer; font-size: 0.78rem; }
+.budgets__packages { list-style: none; margin: 0.35rem 0 0; padding: 0; font-size: 0.8rem; }
+.budgets__packages li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-variant-numeric: tabular-nums;
+}
 
 .progress--big { height: 8px; }
 

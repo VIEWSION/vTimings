@@ -188,6 +188,12 @@ PATCH  /api/auth/lang                  { "lang": "de" | "en" }
 GET    /api/tree                       Kunden > Projekte > Teilprojekte mit Summen
 CRUD   /api/clients · projects · subprojects
 
+GET    /api/budgets?client_id&project_id   Stundenkontingente mit Verbrauch (s. u.)
+POST   /api/budgets                    { client_id, project_id?, hours, starts_on,
+                                         expires_on?, price?, note? }
+PATCH  /api/budgets/{id}
+DELETE /api/budgets/{id}
+
 GET    /api/entries?from&to&client_id&project_id&q&billed&group=day
 POST   /api/entries
 PATCH  /api/entries/{id}               billed: true|false setzt den Status (s. u.)
@@ -226,6 +232,31 @@ Läuft schon ein Timer, antwortet `POST /api/timer/start` mit **409** und
 `code: timer_running`. Die Antwort enthält den laufenden Timer und die
 möglichen Auflösungen. Erst ein erneuter Aufruf mit `on_conflict=stop` oder
 `=parallel` handelt.
+
+### Stundenkontingente
+
+Ein Kontingent besteht aus vorab gekauften Stundenpaketen, entweder für ein
+Projekt oder ohne `project_id` für alle Projekte eines Kunden, die kein
+eigenes haben. Den Verbrauch speichert die Datenbank nicht; `BudgetRepo`
+rechnet ihn bei jedem Abruf aus:
+
+- Gezählt werden abrechenbare Zeiteinträge ab dem Beginn des ersten Pakets.
+- Die Einträge werden in zeitlicher Reihenfolge verrechnet, das älteste
+  Paket zuerst.
+- Was kein Paket mehr aufnimmt, ist Überziehung (`balance_hours` negativ).
+  Ein neues Paket zieht sie ab, auch wenn es erst später beginnt.
+- Mit `expires_on` nimmt ein Paket nach diesem Tag nichts mehr auf. Seine
+  Reststunden verfallen dann (`expired_hours`). Ohne `expires_on` verfallen
+  sie nie.
+- Gerechnet wird nur in Stunden. `price` ist eine reine Information und für
+  Kundenzugänge ohne Kostenrecht nicht sichtbar. Ein später erhöhter
+  Stundensatz ändert am Kontingent nichts.
+
+`/api/tree`, `/api/projects` und `/api/portal` liefern die Kontingente mit:
+als `budget` an Kunde und Projekt, im Portal als `budgets`. `progress` am
+Projekt zeigt weiterhin das laufende Paket. Das frühere Feld
+`projects.budget_hours` ist mit Migration 0004 in ein erstes Paket
+übergegangen und wird nicht mehr gelesen.
 
 ---
 

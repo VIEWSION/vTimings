@@ -12,6 +12,28 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.11.0] – 2026-09-29
+
+### Neu
+- Stundenkontingente: Für Kunden und Projekte lassen sich vorab gekaufte
+  Stundenpakete erfassen (Stammdaten, „Stundenpaket“), jeweils mit
+  Stunden, Beginn, optionalem Ablaufdatum, Preis (nur zur Information) und
+  Notiz. Abrechenbare Zeiten werden der Reihe nach verrechnet, das älteste
+  Paket zuerst. Eine Überziehung zieht das nächste Paket ab. Ohne
+  Ablaufdatum verfallen Reststunden nicht. Ein Kundenkontingent gilt für
+  alle Projekte ohne eigenes Kontingent.
+- Stammdaten zeigen je Kontingent das Guthaben bzw. die Überziehung, das
+  laufende Paket und darunter die abgeschlossenen Pakete. Klick auf ein
+  Paket öffnet es zum Bearbeiten oder Löschen.
+- Kundenportal: Die Karte „Stundenkontingent“ zeigt das aktuelle Paket,
+  das Guthaben und auf Wunsch alle Pakete.
+
+### Geändert
+- Das bisherige Feld „Budget (Std.)“ am Projekt entfällt. Vorhandene Werte
+  werden beim Update (`php bin/console.php migrate`) zu einem ersten
+  Stundenpaket ab der ersten Buchung. Nicht abrechenbare Einträge zählen
+  nicht mehr gegen das Kontingent.
+
 ## [1.10.0] – 2026-09-29
 
 ### Neu

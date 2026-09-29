@@ -239,9 +239,6 @@ final class MasterDataController
         if ($v->has('rate')) {
             $data['rate'] = self::nullable($req, 'rate') ? $v->float('rate', false, 0, 100000) : null;
         }
-        if ($v->has('budget_hours')) {
-            $data['budget_hours'] = self::nullable($req, 'budget_hours') ? $v->float('budget_hours', false, 0, 1000000) : null;
-        }
         if ($v->has('archived')) {
             $data['archived'] = $v->bool('archived', false);
         }

@@ -20,6 +20,7 @@ if (PHP_SAPI !== 'cli') {
 require dirname(__DIR__) . '/bootstrap.php';
 
 use VT\Auth\Auth;
+use VT\Auth\Remember;
 use VT\Config;
 use VT\Db\Database;
 use VT\Db\Migrator;
@@ -171,7 +172,8 @@ switch ($command) {
             'pass_hash'  => Auth::hash($password),
             'updated_at' => Clock::now(),
         ]);
-        out('Passwort geändert.');
+        Remember::forgetUser((int) $row['id']);
+        out('Passwort geändert, gespeicherte Anmeldungen aufgehoben.');
         break;
 
     case 'user:list':

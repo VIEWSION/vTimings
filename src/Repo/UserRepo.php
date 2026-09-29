@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace VT\Repo;
 
 use VT\Auth\Auth;
+use VT\Auth\Remember;
 use VT\Db\Database;
 use VT\Http\HttpException;
 use VT\Support\Clock;
@@ -120,6 +121,12 @@ final class UserRepo
 
         $fields['updated_at'] = Clock::now();
         Database::update('users', $id, $fields);
+
+        // Neues Passwort: kein Gerät bleibt mit dem alten angemeldet – außer
+        // dem Browser, in dem man es gerade selbst geändert hat.
+        if (isset($fields['pass_hash'])) {
+            Remember::forgetUser($id, $id === Auth::user()?->id);
+        }
 
         return self::findOrFail($id);
     }

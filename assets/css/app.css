@@ -370,6 +370,81 @@ pre {
 .entry__actions { grid-area: actions; display: flex; gap: 0.25rem; justify-content: flex-end; }
 
 .daygroup__head h3 { font-variant-numeric: tabular-nums; }
+.daygroup__head .check + h3 { flex: 1; }
+
+/* Einträge-Liste: jeder Eintrag als eigene Kachel mit etwas Luft dazwischen
+   statt durchgehender Trennlinien – Timer und Portal behalten die kompakte
+   Form. */
+.entrylist--spaced {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.6rem;
+}
+.entrylist--spaced .entry,
+.entrylist--spaced li:last-child .entry {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.7rem 0.85rem;
+}
+
+.entry__rate { display: block; font-weight: 400; font-size: 0.72rem; opacity: 0.8; }
+
+/* -- Mehrfachauswahl ------------------------------------------------------ */
+
+.check {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    margin: -0.25rem 0 -0.25rem -0.25rem;
+    cursor: pointer;
+}
+.check input { width: 1.05rem; height: 1.05rem; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.check input:disabled { cursor: not-allowed; }
+
+.entry--check {
+    grid-template-columns: auto auto auto 1fr auto;
+    grid-template-areas: "check dot times main dur" ". . . actions actions";
+}
+.entry__check { grid-area: check; margin-top: -0.2rem; }
+.entry.is-selected {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.batchbar {
+    position: sticky;
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.5rem);
+    z-index: 15;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    padding: 0.65rem 1rem;
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.batchbar[hidden] { display: none; }
+.batchbar__count { margin-right: auto; font-variant-numeric: tabular-nums; }
+@media (min-width: 900px) {
+    .batchbar { bottom: 1rem; }
+}
+
+/* Schmale Displays: Uhrzeit in eine eigene Zeile, damit Teilprojekt und
+   Notiz nicht neben Häkchen, Uhrzeit und Dauer auf einen Streifen schrumpfen. */
+@media (max-width: 700px) {
+    .entrylist--spaced .entry {
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas: "dot times ." ". main dur" ". actions actions";
+    }
+    .entrylist--spaced .entry--check {
+        grid-template-columns: auto auto 1fr auto;
+        grid-template-areas: "check dot times ." ". main main dur" ". actions actions actions";
+    }
+}
+
+.batch__pick { display: flex; gap: 0.35rem; align-items: center; }
+.batch__pick .input { flex: 1; }
 
 .summary {
     display: flex;

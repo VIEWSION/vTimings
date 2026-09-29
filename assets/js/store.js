@@ -32,8 +32,8 @@ export async function loadSession() {
     return data.user;
 }
 
-export async function login(email, password) {
-    const data = await api.post('/auth/login', { email, password });
+export async function login(email, password, remember = false) {
+    const data = await api.post('/auth/login', { email, password, remember });
     api.setCsrf(data.csrf);
     state.user = data.user;
     setLang(data.user.lang);

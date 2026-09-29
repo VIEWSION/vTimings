@@ -20,6 +20,7 @@ final class EntryController
         $r->get('/api/entries/recent', [self::class, 'recent'], ['auth' => 'user']);
         $r->get('/api/entries/{id}', [self::class, 'show'], ['auth' => 'user']);
         $r->post('/api/entries', [self::class, 'store']);
+        $r->post('/api/entries/batch', [self::class, 'batch']);
         $r->patch('/api/entries/{id}', [self::class, 'update']);
         $r->delete('/api/entries/{id}', [self::class, 'destroy']);
         $r->post('/api/entries/{id}/restore', [self::class, 'restore']);
@@ -138,6 +139,52 @@ final class EntryController
         }
 
         return ['entry' => EntryRepo::update(self::id($req), $data)];
+    }
+
+    /**
+     * Sammelbearbeitung. `rate_mode`: keep = Satz behalten, inherit = aus
+     * der Stammdaten-Hierarchie (ggf. des neuen Teilprojekts) übernehmen,
+     * fixed = `rate` für alle setzen.
+     */
+    public static function batch(Request $req): array
+    {
+        // Nur was sich sinnvoll für viele Einträge gleichzeitig setzen lässt.
+        $allowed = ['ids', 'subproject_id', 'rate_mode', 'rate', 'billable'];
+        $unknown = array_diff(array_keys($req->body), $allowed);
+        if ($unknown !== []) {
+            throw HttpException::badRequest(
+                'Im Sammelbearbeiten nicht änderbar: ' . implode(', ', $unknown)
+            );
+        }
+
+        $v = new Validator($req->body);
+        $ids = $req->body['ids'] ?? null;
+        if (!is_array($ids) || $ids === [] || count($ids) > 1000) {
+            $v->fail('ids', 'Zwischen 1 und 1000 Einträge auswählen.');
+        } elseif (array_filter($ids, static fn($id) => !is_int($id) && !(is_string($id) && ctype_digit($id))) !== []) {
+            $v->fail('ids', 'Ungültige Eintrags-IDs.');
+        }
+
+        $data = [];
+        if ($v->has('subproject_id')) {
+            $data['subproject_id'] = $v->int('subproject_id', true, 1);
+        }
+        $rateMode = $v->enum('rate_mode', ['keep', 'inherit', 'fixed'], false, 'keep');
+        if ($rateMode === 'fixed') {
+            $data['rate'] = $v->float('rate', true, 0, 100000);
+        } elseif ($rateMode === 'inherit') {
+            $data['rate'] = null;
+        }
+        if ($v->has('billable')) {
+            $data['billable'] = $v->bool('billable', true);
+        }
+        $v->validate();
+
+        if ($data === []) {
+            throw HttpException::badRequest('Keine Änderungen übergeben.');
+        }
+
+        return EntryRepo::batchUpdate(array_map('intval', $ids), $data);
     }
 
     public static function destroy(Request $req): array

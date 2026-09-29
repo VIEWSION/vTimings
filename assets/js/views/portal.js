@@ -7,6 +7,7 @@
 import { api } from '../api.js';
 import { state } from '../store.js';
 import { t } from '../i18n.js';
+import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, toastError } from '../ui.js';
 import { dayLabel, decimal, formatDate, formatDateTime, hhmm, html, money } from '../util.js';
 
@@ -23,7 +24,9 @@ export const portalView = {
             data = await api.get('/portal', {
                 client_id: state.user?.role === 'admin' ? previewClientId() : undefined,
             });
-            selected = null;
+            // Die Projektauswahl überdauert das Neuladen – je Kunde, damit die
+            // Vorschau verschiedener Kunden sich nicht gegenseitig verstellt.
+            selected = loadPref(selectionKey(), null);
             paint(root);
         } catch (error) {
             toastError(error);
@@ -36,6 +39,15 @@ export const portalView = {
         selected = null;
     },
 };
+
+function selectionKey() {
+    return `portalProject.${data?.client?.id ?? 0}`;
+}
+
+function select(id) {
+    selected = id;
+    savePref(selectionKey(), id);
+}
 
 function previewClientId() {
     const params = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -266,7 +278,7 @@ function onClick(event) {
     const root = event.currentTarget;
 
     if (event.target.closest('[data-clear]')) {
-        selected = null;
+        select(null);
         return paint(root);
     }
 
@@ -275,6 +287,6 @@ function onClick(event) {
 
     const id = Number(row.dataset.project);
     // Erneuter Klick auf dasselbe Projekt hebt die Auswahl auf.
-    selected = selected === id ? null : id;
+    select(selected === id ? null : id);
     paint(root);
 }

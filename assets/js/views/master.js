@@ -4,6 +4,7 @@
 import { api } from '../api.js';
 import { state, loadTree, invalidateTree } from '../store.js';
 import { LANGS, t } from '../i18n.js';
+import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
 import { esc, html, money } from '../util.js';
 
@@ -11,22 +12,27 @@ const sel = { clientId: null, projectId: null, archived: false, q: '' };
 
 // Sortierung der drei Spalten. Betrifft nur die Darstellung – Auswahl und
 // Suche arbeiten weiterhin über die IDs, nicht über die Reihenfolge.
-const SORT_KEY = 'vt.masterSort';
-let sortBy = readSort();
+let sortBy = 'name';
 
-/** Überdauert die Sitzung – wie Darstellung und Maßstab im Kalender. */
-function readSort() {
-    try {
-        return localStorage.getItem(SORT_KEY) === 'activity' ? 'activity' : 'name';
-    } catch {
-        return 'name'; // Privater Modus: dann eben ohne Erinnerung.
-    }
+let initialized = false;
+
+/**
+ * Sortierung, Auswahl, Suche und Archiv-Schalter überdauern das Neuladen.
+ * Erst beim ersten Aufruf gelesen – die Einstellungen liegen je Benutzer.
+ */
+function restore() {
+    sortBy = loadPref('masterSort', 'name', { legacyKey: 'vt.masterSort' }) === 'activity' ? 'activity' : 'name';
+
+    const saved = loadPref('master', null);
+    if (!saved) return;
+    sel.clientId = Number.isInteger(saved.clientId) ? saved.clientId : null;
+    sel.projectId = Number.isInteger(saved.projectId) ? saved.projectId : null;
+    sel.archived = saved.archived === true;
+    sel.q = typeof saved.q === 'string' ? saved.q : '';
 }
 
 function storeSort() {
-    try {
-        localStorage.setItem(SORT_KEY, sortBy);
-    } catch { /* siehe readSort() */ }
+    savePref('masterSort', sortBy);
 }
 
 /**
@@ -48,6 +54,10 @@ function sortRows(list) {
 
 export const masterView = {
     async render(root) {
+        if (!initialized) {
+            initialized = true;
+            restore();
+        }
         root.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
         await loadTree({ force: true, archived: sel.archived });
 
@@ -103,6 +113,8 @@ function currentProject() {
 function draw(root) {
     const list = clients();
     if (sel.clientId && !list.some((c) => c.id === sel.clientId)) sel.clientId = null;
+    if (sel.projectId && !currentProject()) sel.projectId = null;
+    savePref('master', sel);
 
     root.querySelector('.browser').dataset.level =
         sel.projectId ? 'subprojects' : (sel.clientId ? 'projects' : 'clients');

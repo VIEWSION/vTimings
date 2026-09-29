@@ -25,12 +25,26 @@ final class Session
             return;
         }
 
-        $lifetime = (int) Config::get('session_lifetime', 2592000);
+        // Die Sitzung endet mit dem Browser bzw. nach `session_lifetime`
+        // ohne Aktivität. Länger angemeldet bleibt man über Remember.
+        $lifetime = (int) Config::get('session_lifetime', 60 * 60 * 12);
         $base = Request::basePath();
+
+        // Eigenes Verzeichnis statt des systemweiten: dort räumen auch
+        // andere PHP-Anwendungen mit ihrer eigenen (meist kürzeren)
+        // gc_maxlifetime auf und nehmen unsere Sitzungen gleich mit – unter
+        // MAMP nach 24 Minuten.
+        $path = (string) Config::get('session_path', VT_DATA . '/sessions');
+        if (!is_dir($path)) {
+            @mkdir($path, 0700, true);
+        }
+        if (is_dir($path) && is_writable($path)) {
+            session_save_path($path);
+        }
 
         session_name((string) Config::get('session_name', 'vtsid'));
         session_set_cookie_params([
-            'lifetime' => $lifetime,
+            'lifetime' => 0,
             'path'     => $base === '' ? '/' : $base . '/',
             'domain'   => '',
             'secure'   => self::isHttps(),

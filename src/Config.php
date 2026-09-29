@@ -22,7 +22,9 @@ final class Config
         'base_path'     => null,          // null = automatisch aus dem Request
         'db_file'       => null,          // null = data/vtimings.sqlite
         'session_name'  => 'vtsid',
-        'session_lifetime' => 60 * 60 * 24 * 30,
+        'session_lifetime'  => 60 * 60 * 12,       // Leerlauf, bis die Sitzung verfällt
+        'session_path'      => null,               // null = data/sessions
+        'remember_lifetime' => 60 * 60 * 24 * 90,  // "Angemeldet bleiben", verlängert sich bei Nutzung
         'trusted_proxy' => false,         // true, wenn ein Reverse-Proxy davor steht
     ];
 

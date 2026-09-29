@@ -125,9 +125,10 @@ final class Kernel
             $v = new Support\Validator($req->body);
             $email = $v->email('email', true);
             $password = $v->string('password', true, 200);
+            $remember = $v->bool('remember', false);
             $v->validate();
 
-            $user = Auth::login($req, (string) $email, (string) $password);
+            $user = Auth::login($req, (string) $email, (string) $password, (bool) $remember);
 
             return Response::json([
                 'user' => $user->toArray() + ['lang' => Auth::lang()],

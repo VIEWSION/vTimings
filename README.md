@@ -88,6 +88,28 @@ die der Druckvorlagen in `src/Report/Translator.php`. Deutsch ist die
 Leitsprache: fehlt ein Schlüssel in `en`, erscheint der deutsche Text.
 Zahlen, Beträge und Datumsangaben folgen der Sprache (`de-DE` bzw. `en-GB`).
 
+## Anmeldung und gemerkte Einstellungen
+
+**Angemeldet bleiben** (Häkchen beim Anmelden, Vorgabe an): Die eigentliche
+Sitzung endet mit dem Browser bzw. nach `session_lifetime` (12 h) ohne
+Aktivität. Zusätzlich setzt die App ein Cookie `vtsid_r` mit einem
+Zufallstoken (Tabelle `remember_tokens`, nur der Hash). Läuft die Sitzung ab,
+eröffnet sie darüber still eine neue; die Laufzeit (`remember_lifetime`,
+90 Tage) verlängert sich bei jeder Nutzung. Abmelden entwertet das Token des
+Browsers, ein Passwortwechsel die aller anderen Geräte. Das neue CSRF-Token
+holt sich die Oberfläche bei einer 419 selbst nach (`api.js`).
+
+Sitzungsdateien liegen in `data/sessions/`, nicht im systemweiten Ordner –
+dort räumen andere PHP-Anwendungen mit ihrer eigenen `gc_maxlifetime` auf
+(unter MAMP 24 Minuten) und nehmen fremde Sitzungen mit.
+
+**Filter und Ansichten** (Zeitraum, Kunde/Projekt, Suche, Status, Liste/
+Kalender, Auswertungs- und Druckoptionen, Stammdaten-Auswahl) merkt sich der
+Browser im `localStorage`, je Benutzer getrennt (`assets/js/prefs.js`). Ein
+Schnellzeitraum wie „Dieser Monat“ wird als solcher gespeichert und beim
+nächsten Aufruf neu berechnet. Der Ankertag im Kalender liegt im
+`sessionStorage`: er übersteht ein Neuladen, ein neuer Tab beginnt bei heute.
+
 ---
 
 ## Kommandos
@@ -129,12 +151,14 @@ zur Hand ist.
    ```
    Erwartet wird 403 oder 404. Alles andere ist ein Datenleck.
 3. **Testkonten löschen.** `php bin/console.php user:list` zeigt alle Zugänge.
-4. **Schreibrechte** braucht nur `data/` (Datenbank, Logs, Sicherungen).
+4. **Schreibrechte** braucht nur `data/` (Datenbank, Logs, Sicherungen,
+   Sitzungen).
 5. **nginx statt Apache?** Die `.htaccess` wirkt dort nicht. Nötig sind: `/api/`
    und `/report` auf `api.php`, alles Übrige auf `index.php`, und ein
    `location ~ ^/(data|src|migrations|bin)/ { deny all; }`.
 
-Eingebaut sind Argon2id-Passwörter, `HttpOnly`/`Secure`/`SameSite=Strict`-Cookies,
+Eingebaut sind Argon2id-Passwörter, `HttpOnly`/`Secure`/`SameSite=Strict`-Cookies
+(auch für „Angemeldet bleiben“),
 Sitzungswechsel beim Anmelden, CSRF-Token auf allen schreibenden Aufrufen und
 eine Login-Bremse mit wachsender Sperrzeit je IP und je E-Mail.
 
@@ -148,7 +172,7 @@ zusätzlich `X-CSRF-Token` aus `GET /api/auth/me`.
 
 ```
 GET    /api/health                     ohne Anmeldung
-POST   /api/auth/login · logout · password
+POST   /api/auth/login · logout · password   login: { email, password, remember }
 GET    /api/auth/me                    enthält die Oberflächensprache
 PATCH  /api/auth/lang                  { "lang": "de" | "en" }
 
@@ -158,6 +182,9 @@ CRUD   /api/clients · projects · subprojects
 GET    /api/entries?from&to&client_id&project_id&q&billed&group=day
 POST   /api/entries
 PATCH  /api/entries/{id}
+POST   /api/entries/batch              { ids, subproject_id?, rate_mode?: keep|inherit|fixed,
+                                         rate?, billable? } – keine Zeiten/Notizen;
+                                         abgerechnete Einträge werden übersprungen
 DELETE /api/entries/{id}               Papierkorb
 POST   /api/entries/{id}/restore
 GET    /api/entries/recent             Schnellwahl

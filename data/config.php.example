@@ -22,8 +22,14 @@ return [
     // Erkennung hinter einem Proxy danebenliegt, z. B. '/zeiterfassung'.
     'base_path' => null,
 
-    // Sitzungsdauer in Sekunden (Vorgabe: 30 Tage).
-    'session_lifetime' => 60 * 60 * 24 * 30,
+    // Sitzung ohne "Angemeldet bleiben": endet mit dem Browser bzw. nach
+    // so vielen Sekunden ohne Aktivität (Vorgabe: 12 Stunden).
+    'session_lifetime' => 60 * 60 * 12,
+
+    // "Angemeldet bleiben": so lange gilt die Anmeldung pro Browser, wenn
+    // die App in dieser Zeit nicht geöffnet wird. Jede Nutzung verlängert
+    // sie wieder (Vorgabe: 90 Tage).
+    'remember_lifetime' => 60 * 60 * 24 * 90,
 
     // Abweichender Ort der Datenbank, z. B. außerhalb des Webroots.
     // null = data/vtimings.sqlite

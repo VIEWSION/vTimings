@@ -3,7 +3,8 @@
 import { api } from '../api.js';
 import { state, loadTree, loadSettings, invalidateTree, flatSubprojects } from '../store.js';
 import { t } from '../i18n.js';
-import { confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
+import { loadPref, savePref } from '../prefs.js';
+import { bindOnce, confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
     calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
 } from './calendar.js';
@@ -23,32 +24,61 @@ const filters = {
     trashed: '0',
 };
 
+// Zuletzt gewählter Schnellzeitraum ("Dieser Monat" usw.). Solange er gilt,
+// merkt sich die Ansicht ihn statt fester Daten – sonst stünde nach einem
+// Monatswechsel noch der alte Monat im Filter. Wer die Daten von Hand setzt,
+// hebt ihn auf.
+let range = null;
+
 let initialized = false;
 
 // Darstellung: Liste oder Kalender. Im Kalender geben Maßstab und Ankertag
 // den Zeitraum vor – die Datumsfelder des Filters werden dann von der
 // Navigation gefüllt statt von Hand. Der Ankertag ist immer ein konkreter
 // Tag, auch im Monatsraster.
-const VIEW_KEY = 'vt.entriesView';
-
-const stored = readView();
-let mode = stored.mode === 'calendar' ? 'calendar' : 'list';
-let scale = SCALES.includes(stored.scale) ? stored.scale : 'week';
+let mode = 'list';
+let scale = 'week';
 let anchor = todayISO();
 
-/** Darstellung und Maßstab überdauern die Sitzung – wie die Sprache. */
-function readView() {
-    try {
-        return JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
-    } catch {
-        return {}; // Privater Modus oder kaputter Eintrag: dann eben Liste.
+// Mehrfachauswahl für das Sammelbearbeiten. `selectable` sind die IDs, die in
+// der aktuellen Liste angehakt werden können (nicht abgerechnet, nicht im
+// Papierkorb) – was nach einem Filterwechsel nicht mehr zu sehen ist, fällt
+// aus der Auswahl, damit man nichts Unsichtbares mitändert.
+const selected = new Set();
+let selectable = [];
+
+/**
+ * Gemerkten Zustand übernehmen. Erst beim ersten Aufruf, nicht beim Laden
+ * des Moduls: die Einstellungen liegen je Benutzer, und der steht erst nach
+ * der Anmeldung fest.
+ */
+function restore() {
+    const view = loadPref('entriesView', {}, { legacyKey: 'vt.entriesView' }) || {};
+    mode = view.mode === 'calendar' ? 'calendar' : 'list';
+    scale = SCALES.includes(view.scale) ? view.scale : 'week';
+
+    const day = loadPref('entriesAnchor', null, { session: true });
+    if (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)) anchor = day;
+
+    const saved = loadPref('entries', null);
+    if (!saved || typeof saved.filters !== 'object') return false;
+
+    for (const key of Object.keys(filters)) {
+        if (typeof saved.filters[key] === 'string') filters[key] = saved.filters[key];
     }
+    range = RANGES.includes(saved.range) ? saved.range : null;
+    if (range) Object.assign(filters, rangeDates(range));
+    return true;
 }
 
+/** Darstellung und Maßstab überdauern die Sitzung – wie die Sprache. */
 function storeView() {
-    try {
-        localStorage.setItem(VIEW_KEY, JSON.stringify({ mode, scale }));
-    } catch { /* siehe readView() */ }
+    savePref('entriesView', { mode, scale });
+    savePref('entriesAnchor', anchor, { session: true });
+}
+
+function storeFilters() {
+    savePref('entries', { filters, range });
 }
 
 /** Kundenzugänge sehen dieselbe Liste, dürfen aber nichts ändern. */
@@ -72,9 +102,9 @@ export const entriesView = {
             initialized = true;
             // Kundenzugänge interessiert der gesamte Projektverlauf, nicht der
             // laufende Monat – dort stünde meist eine leere Liste.
-            if (!canEdit()) {
-                filters.from = '';
-                filters.to = '';
+            if (!restore()) {
+                range = canEdit() ? 'month' : 'all';
+                Object.assign(filters, rangeDates(range));
             }
         }
 
@@ -153,6 +183,7 @@ export const entriesView = {
                     </div>
                 </form>
                 <div id="results"><div class="loading">${t('common.loading')}</div></div>
+                <div class="batchbar card" id="batchbar" hidden></div>
             </section>`;
 
         fillFilters(root);
@@ -245,6 +276,7 @@ function bind(root) {
 
     form.addEventListener('change', (event) => {
         read();
+        if (event.target.name === 'from' || event.target.name === 'to') range = null;
         // Die Auswahl hängt zusammen: ein anderer Kunde ändert die Projekte,
         // ein anderes Projekt die Teilprojekte.
         if (event.target.name === 'client_id') fillProjects(root);
@@ -267,15 +299,50 @@ function bind(root) {
             return refresh(root);
         }
 
-        const range = event.target.closest('[data-range]');
-        if (!range) return;
-        applyRange(form, range.dataset.range);
+        const chip = event.target.closest('[data-range]');
+        if (!chip) return;
+        range = chip.dataset.range;
+        const dates = rangeDates(range);
+        form.from.value = dates.from;
+        form.to.value = dates.to;
         update();
     });
 
     root.querySelector('#new-entry')?.addEventListener('click', () => editEntry(root, null));
 
-    root.querySelector('#results').addEventListener('click', async (event) => {
+    const results = root.querySelector('#results');
+
+    // Häkchen einzeln oder für einen ganzen Tag.
+    bindOnce(results, 'EntriesSelect', 'change', (event) => {
+        const one = event.target.closest('[data-select]');
+        const day = event.target.closest('[data-select-day]');
+        if (!one && !day) return;
+
+        const ids = one
+            ? [Number(one.dataset.select)]
+            : [...results.querySelectorAll(`[data-day="${day.dataset.selectDay}"] [data-select]:not(:disabled)`)]
+                .map((el) => Number(el.dataset.select));
+        for (const id of ids) {
+            if (event.target.checked) selected.add(id);
+            else selected.delete(id);
+        }
+        syncSelection(root);
+    });
+
+    bindOnce(root.querySelector('#batchbar'), 'EntriesBatch', 'click', (event) => {
+        const action = event.target.closest('[data-batch]')?.dataset.batch;
+        if (action === 'all') {
+            for (const id of selectable) selected.add(id);
+            syncSelection(root);
+        } else if (action === 'clear') {
+            selected.clear();
+            syncSelection(root);
+        } else if (action === 'edit') {
+            batchEdit(root);
+        }
+    });
+
+    results.addEventListener('click', async (event) => {
         const edit = event.target.closest('[data-edit]');
         if (edit) return editEntry(root, Number(edit.dataset.edit));
 
@@ -345,6 +412,10 @@ function applyCalendarRange(root) {
     const { from, to } = calendarRange(scale, anchor);
     const form = root.querySelector('#filters');
 
+    // Der Zeitraum folgt jetzt der Kalendernavigation, nicht mehr dem Chip.
+    range = null;
+    savePref('entriesAnchor', anchor, { session: true });
+
     filters.from = from;
     filters.to = to;
     form.from.value = from;
@@ -402,9 +473,9 @@ function onCalendarClick(root, event) {
 function resetFilters(form) {
     // Dieselbe Vorgabe wie beim ersten Aufruf: Kunden sehen alles,
     // Administratoren den laufenden Monat.
+    range = canEdit() ? 'month' : 'all';
     Object.assign(filters, {
-        from: canEdit() ? startOfMonth() : '',
-        to: canEdit() ? todayISO() : '',
+        ...rangeDates(range),
         client_id: '',
         project_id: '',
         subproject_id: '',
@@ -419,28 +490,36 @@ function resetFilters(form) {
     if (form.trashed) form.trashed.checked = false;
 }
 
-function applyRange(form, range) {
+const RANGES = ['today', 'week', 'month', 'lastmonth', 'year', 'all'];
+
+/** Von/Bis eines Schnellzeitraums, gerechnet ab heute. */
+function rangeDates(key) {
     const today = todayISO();
-    const set = (from, to) => { form.from.value = from; form.to.value = to; };
 
     // "Gesamt" heißt: keine Datumsgrenzen – der Server liefert dann alles.
-    if (range === 'all') return set('', '');
-    if (range === 'today') return set(today, today);
-    if (range === 'week') return set(startOfWeek(today), today);
-    if (range === 'month') return set(startOfMonth(), today);
-    if (range === 'lastmonth') {
+    if (key === 'today') return { from: today, to: today };
+    if (key === 'week') return { from: startOfWeek(today), to: today };
+    if (key === 'month') return { from: startOfMonth(), to: today };
+    if (key === 'lastmonth') {
         const [y, m] = today.split('-').map(Number);
         const prev = m === 1 ? [y - 1, 12] : [y, m - 1];
         const last = new Date(prev[0], prev[1], 0).getDate();
         const mm = String(prev[1]).padStart(2, '0');
-        return set(`${prev[0]}-${mm}-01`, `${prev[0]}-${mm}-${last}`);
+        return { from: `${prev[0]}-${mm}-01`, to: `${prev[0]}-${mm}-${last}` };
     }
-    if (range === 'year') return set(`${today.slice(0, 4)}-01-01`, today);
+    if (key === 'year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
+    return { from: '', to: '' };
 }
 
 async function refresh(root) {
     const host = root.querySelector('#results');
     host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
+
+    storeFilters();
+    for (const chip of root.querySelectorAll('[data-range]')) {
+        chip.classList.toggle('is-active', chip.dataset.range === range);
+    }
+    selectable = [];
 
     try {
         const data = await api.get('/entries', {
@@ -466,11 +545,57 @@ async function refresh(root) {
             return;
         }
 
+        if (canSelect()) {
+            selectable = data.days.flatMap((day) => day.entries)
+                .filter((entry) => !entry.billed)
+                .map((entry) => entry.id);
+        }
         host.innerHTML = html`${summary(data)}${data.days.map(dayGroup)}`;
     } catch (error) {
         toastError(error);
         host.innerHTML = html`<div class="card"><p class="card__body">${t('common.loadFailed')}</p></div>`;
+    } finally {
+        syncSelection(root);
     }
+}
+
+/** Ankreuzen nur in der Liste und außerhalb des Papierkorbs. */
+function canSelect() {
+    return canEdit() && mode === 'list' && filters.trashed !== '1';
+}
+
+/**
+ * Auswahl mit der sichtbaren Liste abgleichen: Häkchen setzen, Tages-
+ * kästchen (ganz, teilweise, gar nicht) nachziehen, Leiste ein-/ausblenden.
+ */
+function syncSelection(root) {
+    const visible = new Set(selectable);
+    for (const id of [...selected]) {
+        if (!visible.has(id)) selected.delete(id);
+    }
+
+    for (const box of root.querySelectorAll('[data-select]')) {
+        box.checked = selected.has(Number(box.dataset.select));
+        box.closest('.entry')?.classList.toggle('is-selected', box.checked);
+    }
+    for (const box of root.querySelectorAll('[data-select-day]')) {
+        const boxes = [...root.querySelectorAll(`[data-day="${box.dataset.selectDay}"] [data-select]:not(:disabled)`)];
+        const count = boxes.filter((el) => el.checked).length;
+        box.checked = boxes.length > 0 && count === boxes.length;
+        box.indeterminate = count > 0 && count < boxes.length;
+    }
+
+    const bar = root.querySelector('#batchbar');
+    if (!bar) return;
+    bar.hidden = selected.size === 0;
+    if (bar.hidden) return;
+
+    bar.innerHTML = html`
+        <strong class="batchbar__count">${t('batch.selected', { count: selected.size })}</strong>
+        ${selected.size < selectable.length
+            ? html`<button type="button" class="chip" data-batch="all">${t('batch.selectAll')}</button>` : ''}
+        <button type="button" class="chip" data-batch="clear">${t('batch.clear')}</button>
+        <button type="button" class="btn btn--primary" data-batch="edit">${t('batch.edit')}</button>`;
 }
 
 function summary(data) {
@@ -487,19 +612,32 @@ function summary(data) {
 }
 
 function dayGroup(day) {
+    const withBoxes = canSelect() && day.entries.some((entry) => !entry.billed);
+
     return html`
-        <section class="card daygroup">
+        <section class="card daygroup" data-day="${day.date}">
             <header class="card__head daygroup__head">
+                ${withBoxes ? html`
+                    <label class="check" title="${t('batch.selectDay')}">
+                        <input type="checkbox" data-select-day="${day.date}" aria-label="${t('batch.selectDay')}">
+                    </label>` : ''}
                 <h3>${dayLabel(day.date)}</h3>
                 <span class="badge">${day.hhmm}${day.amount !== undefined ? ` · ${money(day.amount)}` : ''}</span>
             </header>
-            <ul class="entrylist">${day.entries.map(row)}</ul>
+            <ul class="entrylist entrylist--spaced">${day.entries.map(row)}</ul>
         </section>`;
 }
 
 function row(entry) {
+    const check = canSelect();
+
     return html`
-        <li class="entry ${entry.billed ? 'entry--billed' : ''}">
+        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${check ? 'entry--check' : ''}">
+            ${check ? html`
+                <label class="check entry__check" title="${entry.billed ? t('batch.locked') : t('batch.selectEntry')}">
+                    <input type="checkbox" data-select="${entry.id}" aria-label="${t('batch.selectEntry')}"
+                        ${entry.billed ? { __raw: 'disabled' } : ''}>
+                </label>` : ''}
             <span class="dot" style="background:${entry.color || 'var(--border)'}"></span>
             <span class="entry__times">
                 ${entry.start_time}–${entry.end_time}
@@ -517,6 +655,8 @@ function row(entry) {
             <span class="entry__dur">
                 ${entry.hhmm}
                 ${entry.amount !== undefined ? html`<span class="muted entry__amount">${money(entry.amount)}</span>` : ''}
+                ${entry.rate !== undefined ? html`<span class="muted entry__rate">
+                    ${t('entries.perHour', { rate: money(entry.rate, entry.currency) })}</span>` : ''}
             </span>
             ${canEdit() ? html`
                 <span class="entry__actions">
@@ -527,6 +667,104 @@ function row(entry) {
                             <button class="icon-btn" data-delete="${entry.id}" title="${t('common.delete')}">🗑</button>`}
                 </span>` : ''}
         </li>`;
+}
+
+// -- Sammelbearbeiten -------------------------------------------------------
+
+/**
+ * Mehrere Einträge auf einmal ändern: verschieben, Stundensatz, abrechenbar.
+ * Zeiten, Dauer und Notizen gibt es hier bewusst nicht – die sind je Eintrag
+ * verschieden, und der Server nimmt sie in diesem Weg auch nicht an.
+ */
+async function batchEdit(root) {
+    const ids = [...selected];
+    if (!ids.length) return;
+
+    await loadTree();
+    let subprojectId = null;
+
+    const node = document.createElement('div');
+    node.innerHTML = html`
+        <p class="muted">${t('batch.intro')}</p>
+        <div class="field">
+            <span class="field__label">${t('batch.moveTo')}</span>
+            <div class="batch__pick">
+                <button type="button" class="input input--button" name="subproject_id" data-pick>${t('batch.keep')}</button>
+                <button type="button" class="icon-btn" data-unpick hidden title="${t('batch.keep')}">✕</button>
+            </div>
+        </div>
+        <div class="filters__row">
+            <label class="field field--inline field--grow">
+                <span class="field__label">${t('common.rate')}</span>
+                <select class="input" name="rate_mode">
+                    <option value="keep">${t('batch.rateKeep')}</option>
+                    <option value="inherit">${t('batch.rateInherit')}</option>
+                    <option value="fixed">${t('batch.rateFixed')}</option>
+                </select>
+            </label>
+            <label class="field field--inline">
+                <span class="field__label">&nbsp;</span>
+                <input class="input" type="number" name="rate" step="0.01" min="0" disabled>
+            </label>
+        </div>
+        <label class="field">
+            <span class="field__label">${t('batch.billable')}</span>
+            <select class="input" name="billable">
+                <option value="">${t('batch.keep')}</option>
+                <option value="1">${t('batch.billableYes')}</option>
+                <option value="0">${t('batch.billableNo')}</option>
+            </select>
+        </label>`;
+
+    const pick = node.querySelector('[data-pick]');
+    const unpick = node.querySelector('[data-unpick]');
+    const rateMode = node.querySelector('[name=rate_mode]');
+    const rate = node.querySelector('[name=rate]');
+
+    pick.addEventListener('click', async () => {
+        const picked = await pickSubproject({ current: subprojectId });
+        if (!picked) return;
+        subprojectId = picked;
+        pick.textContent = flatSubprojects().find((s) => s.id === picked)?.path || t('common.dash');
+        unpick.hidden = false;
+    });
+    unpick.addEventListener('click', () => {
+        subprojectId = null;
+        pick.textContent = t('batch.keep');
+        unpick.hidden = true;
+    });
+    rateMode.addEventListener('change', () => {
+        rate.disabled = rateMode.value !== 'fixed';
+        if (!rate.disabled) rate.focus();
+    });
+
+    const result = await saveDialog({
+        title: ids.length === 1 ? t('batch.titleOne') : t('batch.title', { count: ids.length }),
+        body: node,
+        saveLabel: t('common.apply'),
+        save: async () => {
+            const payload = { ids };
+            if (subprojectId) payload.subproject_id = subprojectId;
+            if (rateMode.value !== 'keep') payload.rate_mode = rateMode.value;
+            if (rateMode.value === 'fixed') payload.rate = rate.value === '' ? null : Number(rate.value);
+            if (node.querySelector('[name=billable]').value !== '') {
+                payload.billable = node.querySelector('[name=billable]').value === '1';
+            }
+
+            if (Object.keys(payload).length === 1) throw new Error(t('batch.nothing'));
+            return api.post('/entries/batch', payload);
+        },
+    });
+    if (!result) return;
+
+    const done = result.updated.length;
+    toast(done === 1 ? t('batch.doneOne') : t('batch.done', { count: done }), 'ok', 3000);
+    if (result.skipped.length) {
+        toast(t('batch.skipped', { count: result.skipped.length }), 'info', 6000);
+    }
+    selected.clear();
+    invalidateTree();
+    await refresh(root);
 }
 
 // -- Bearbeiten -------------------------------------------------------------

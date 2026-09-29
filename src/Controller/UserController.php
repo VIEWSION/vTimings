@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace VT\Controller;
 
 use VT\Auth\Auth;
+use VT\Auth\Remember;
 use VT\Db\Database;
 use VT\Http\HttpException;
 use VT\Http\Request;
@@ -77,6 +78,7 @@ final class UserController
             'pass_hash'  => Auth::hash((string) $next),
             'updated_at' => Clock::now(),
         ]);
+        Remember::forgetUser($user->id, true);
 
         return ['ok' => true];
     }

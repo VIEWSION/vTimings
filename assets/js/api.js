@@ -18,7 +18,22 @@ export class ApiError extends Error {
     }
 }
 
-async function request(method, path, { body, query, raw } = {}) {
+async function request(method, path, options = {}) {
+    try {
+        return await send(method, path, options);
+    } catch (error) {
+        // 419: Die Sitzung wurde inzwischen neu eröffnet (abgelaufen und über
+        // "Angemeldet bleiben" wiederhergestellt) und hat ein neues
+        // CSRF-Token. Einmal nachholen und denselben Aufruf wiederholen.
+        if (!(error instanceof ApiError) || error.status !== 419 || options.retried) throw error;
+        const me = await send('GET', '/auth/me');
+        if (!me?.user) throw new ApiError(401, 'unauthorized', error.message);
+        csrf = me.csrf;
+        return send(method, path, { ...options, retried: true });
+    }
+}
+
+async function send(method, path, { body, query, raw } = {}) {
     const url = new URL(`${BASE}/api${path}`, window.location.origin);
     for (const [key, value] of Object.entries(query || {})) {
         if (value !== null && value !== undefined && value !== '') {

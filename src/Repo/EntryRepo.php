@@ -404,6 +404,49 @@ final class EntryRepo
         return self::findOrFail($id);
     }
 
+    /**
+     * Mehrere Einträge in einem Zug ändern – Teilprojekt, Satz, abrechenbar.
+     *
+     * Zeiten und Notizen gehören bewusst nicht dazu: die sind je Eintrag
+     * verschieden, ein gemeinsamer Wert wäre fast immer ein Versehen. Jeder
+     * Eintrag läuft durch update(), damit Satzvererbung und Betrag genauso
+     * entstehen wie beim einzelnen Bearbeiten. Abgerechnete und gelöschte
+     * Einträge werden übersprungen statt den ganzen Vorgang abzubrechen.
+     *
+     * @param list<int> $ids
+     * @param array{subproject_id?:int, rate?:float|null, billable?:bool} $data
+     * @return array{updated:list<int>, skipped:list<array{id:int, reason:string}>}
+     */
+    public static function batchUpdate(array $ids, array $data): array
+    {
+        if (array_key_exists('subproject_id', $data)) {
+            // Einmal vorab, damit ein unbekanntes Ziel nicht erst mitten im
+            // Durchlauf auffällt.
+            SubprojectRepo::findOrFail((int) $data['subproject_id']);
+        }
+
+        return Database::transaction(static function () use ($ids, $data): array {
+            $updated = [];
+            $skipped = [];
+
+            foreach (array_values(array_unique($ids)) as $id) {
+                $entry = self::find($id);
+                if ($entry === null) {
+                    $skipped[] = ['id' => $id, 'reason' => 'not_found'];
+                } elseif ($entry['deleted_at'] !== null) {
+                    $skipped[] = ['id' => $id, 'reason' => 'trashed'];
+                } elseif ($entry['billed']) {
+                    $skipped[] = ['id' => $id, 'reason' => 'billed'];
+                } else {
+                    self::update($id, $data);
+                    $updated[] = $id;
+                }
+            }
+
+            return ['updated' => $updated, 'skipped' => $skipped];
+        });
+    }
+
     /** Papierkorb statt hartem Löschen. */
     public static function delete(int $id): void
     {

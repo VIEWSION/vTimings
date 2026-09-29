@@ -50,9 +50,20 @@ final class Auth
             );
             if ($row !== null) {
                 self::$user = User::fromRow($row);
-            } else {
-                Session::destroy();
+                return self::$user;
             }
+            Session::destroy();
+        }
+
+        // Keine (gültige) Sitzung mehr, aber "Angemeldet bleiben" gewählt:
+        // still eine neue Sitzung eröffnen. Das CSRF-Token ist dann ein
+        // neues – die Oberfläche holt es sich bei einer 419 nach.
+        $row = Remember::restore();
+        if ($row !== null) {
+            Session::start();
+            Session::regenerate();
+            Session::set('user_id', (int) $row['id']);
+            self::$user = User::fromRow($row);
         }
 
         return self::$user;
@@ -109,7 +120,7 @@ final class Auth
      * Login mit Passwort. Wirft bei falschen Daten eine 401 – bewusst mit
      * derselben Meldung für unbekannte E-Mail und falsches Passwort.
      */
-    public static function login(Request $request, string $email, string $password): User
+    public static function login(Request $request, string $email, string $password, bool $remember = false): User
     {
         $email = strtolower(trim($email));
 
@@ -135,6 +146,14 @@ final class Auth
         Session::regenerate();
         Session::set('user_id', (int) $row['id']);
         Csrf::rotate();
+
+        // Ein früheres Token dieses Browsers gilt nicht weiter – entweder
+        // ersetzt es ein neues, oder man hat sich diesmal bewusst dagegen
+        // entschieden.
+        Remember::forget();
+        if ($remember) {
+            Remember::issue((int) $row['id'], $request);
+        }
 
         self::$user = User::fromRow($row);
         self::$resolved = true;
@@ -190,6 +209,7 @@ final class Auth
 
     public static function logout(): void
     {
+        Remember::forget();
         Session::destroy();
         self::$user = null;
         self::$resolved = true;

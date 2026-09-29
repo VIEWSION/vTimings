@@ -123,6 +123,10 @@ function renderLogin(message = '') {
                     <span class="field__label">${t('common.password')}</span>
                     <input class="input" type="password" name="password" autocomplete="current-password" required>
                 </label>
+                <label class="switch login__remember">
+                    <input type="checkbox" name="remember" ${rememberChecked() ? 'checked' : ''}>
+                    <span>${t('auth.remember')}</span>
+                </label>
                 <button class="btn btn--primary btn--big" type="submit">${t('auth.signIn')}</button>
                 ${langSwitch('login__lang')}
             </form>
@@ -145,13 +149,33 @@ function renderLogin(message = '') {
         button.disabled = true;
 
         try {
-            await login(form.email.value, form.password.value);
+            storeRememberChoice(form.remember.checked);
+            await login(form.email.value, form.password.value, form.remember.checked);
             renderShell();
         } catch (error) {
             button.disabled = false;
             renderLogin(error.message);
         }
     });
+}
+
+/**
+ * Das Häkchen bleibt so gesetzt, wie man es zuletzt gewählt hat – Vorgabe
+ * ist an. Liegt bewusst nicht in prefs.js: vor der Anmeldung gibt es noch
+ * keinen Benutzer, nach dem sich der Schlüssel richten könnte.
+ */
+function rememberChecked() {
+    try {
+        return localStorage.getItem('vt.remember') !== '0';
+    } catch {
+        return true;
+    }
+}
+
+function storeRememberChoice(checked) {
+    try {
+        localStorage.setItem('vt.remember', checked ? '1' : '0');
+    } catch { /* privater Modus */ }
 }
 
 // -- Shell ------------------------------------------------------------------

@@ -68,6 +68,18 @@ einen Toast zu zeigen. Vorher (bis inkl. Commit `91e110a`) schloss sich der
 Dialog bei jedem Fehler und die Eingaben waren weg – das war ein Bug, kein
 gewolltes Verhalten.
 
+**Gemerkter Ansichtszustand** (Filter, Darstellung, Auswahl) läuft über
+`loadPref()`/`savePref()` aus `assets/js/prefs.js`, nicht über
+`localStorage` direkt – die Schlüssel sind je Benutzer getrennt und jeder
+Zugriff ist gegen privaten Modus abgesichert. Gelesen wird erst beim ersten
+`render()` (Flag `initialized`), nicht beim Laden des Moduls: vorher steht
+der Benutzer noch nicht fest. Relative Zeiträume als solche speichern (siehe
+`range` in `entries.js`), nicht als feste Daten.
+
+**Sammelbearbeiten** (`POST /api/entries/batch`) ändert bewusst nur
+Teilprojekt, Stundensatz und „abrechenbar“ – Zeiten, Dauer und Notizen
+lehnt der Server dort ab. Das ist eine Anforderung, keine Lücke.
+
 ## Backend-Konventionen
 
 **Zeit:** UTC-Unixtimestamp in der DB, `Support\Clock` übersetzt in die

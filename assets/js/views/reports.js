@@ -3,6 +3,7 @@
 import { api } from '../api.js';
 import { state, loadTree } from '../store.js';
 import { LANGS, t } from '../i18n.js';
+import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, toastError } from '../ui.js';
 import { decimal, esc, html, money, todayISO } from '../util.js';
 
@@ -17,6 +18,35 @@ const filters = {
 
 const GROUP_KEYS = ['client', 'project', 'subproject', 'month', 'week', 'day', 'year'];
 
+// Optionen des Leistungsnachweises, gemerkt wie die Filter.
+const options = { template: '', lang: '', costs: false, group_days: false, times: false, notes: true };
+
+let initialized = false;
+
+/**
+ * Gemerkte Filter übernehmen. Ein Bis-Datum, das beim Speichern "heute" war,
+ * rückt auf das neue Heute nach – sonst bliebe die Auswertung am Tag des
+ * letzten Besuchs stehen.
+ */
+function restore() {
+    const saved = loadPref('reports', null);
+    if (!saved) return;
+
+    for (const key of Object.keys(filters)) {
+        if (typeof saved.filters?.[key] === 'string') filters[key] = saved.filters[key];
+    }
+    if (!GROUP_KEYS.includes(filters.group_by)) filters.group_by = 'client';
+    if (saved.savedOn && filters.to === saved.savedOn) filters.to = todayISO();
+
+    for (const key of Object.keys(options)) {
+        if (typeof saved.options?.[key] === typeof options[key]) options[key] = saved.options[key];
+    }
+}
+
+function store() {
+    savePref('reports', { filters, options, savedOn: todayISO() });
+}
+
 /** Beschriftung einer Gruppierung – erst beim Zeichnen, wegen der Sprache. */
 function groupLabel(key) {
     return t('reports.group' + key[0].toUpperCase() + key.slice(1));
@@ -24,6 +54,10 @@ function groupLabel(key) {
 
 export const reportsView = {
     async render(root) {
+        if (!initialized) {
+            initialized = true;
+            restore();
+        }
         await loadTree();
         const [{ formats }, { templates }] = await Promise.all([
             api.get('/export/formats'),
@@ -90,10 +124,10 @@ export const reportsView = {
                             </label>
                         </div>
                         <div class="filters__row">
-                            <label class="switch"><input type="checkbox" id="opt-costs"> <span>${t('reports.optCosts')}</span></label>
-                            <label class="switch"><input type="checkbox" id="opt-group-days"> <span>${t('reports.optGroupDays')}</span></label>
-                            <label class="switch"><input type="checkbox" id="opt-times"> <span>${t('reports.optTimes')}</span></label>
-                            <label class="switch"><input type="checkbox" id="opt-notes" checked> <span>${t('common.notes')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-costs" ${options.costs ? 'checked' : ''}> <span>${t('reports.optCosts')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-group-days" ${options.group_days ? 'checked' : ''}> <span>${t('reports.optGroupDays')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-times" ${options.times ? 'checked' : ''}> <span>${t('reports.optTimes')}</span></label>
+                            <label class="switch"><input type="checkbox" id="opt-notes" ${options.notes ? 'checked' : ''}> <span>${t('common.notes')}</span></label>
                         </div>
                         <button class="btn btn--primary" id="open-report">${t('reports.open')}</button>
                         <p class="muted">${t('reports.openHint')}</p>
@@ -127,6 +161,22 @@ function fillSelects(root) {
 
     fillProjects(root);
     root.querySelector('[name=billed]').value = filters.billed;
+
+    // Nur übernehmen, was es (noch) gibt – sonst bliebe die Auswahl leer.
+    const template = root.querySelector('#template');
+    if ([...template.options].some((o) => o.value === options.template)) template.value = options.template;
+    root.querySelector('#lang').value = options.lang;
+}
+
+/** Optionen des Leistungsnachweises aus den Feldern lesen und merken. */
+function readOptions(root) {
+    options.template = root.querySelector('#template').value;
+    options.lang = root.querySelector('#lang').value;
+    options.costs = root.querySelector('#opt-costs').checked;
+    options.group_days = root.querySelector('#opt-group-days').checked;
+    options.times = root.querySelector('#opt-times').checked;
+    options.notes = root.querySelector('#opt-notes').checked;
+    store();
 }
 
 function fillProjects(root) {
@@ -172,15 +222,21 @@ function bind(root) {
         refresh(root);
     });
 
+    bindOnce(root, 'ReportOptions', 'change', (event) => {
+        if (event.target.closest('#report-filters')) return;
+        readOptions(root);
+    });
+
     root.querySelector('#open-report').addEventListener('click', () => {
+        readOptions(root);
         window.open(api.url('/report', {
             ...queryFilters(),
-            template: root.querySelector('#template').value,
-            lang: root.querySelector('#lang').value,
-            costs: root.querySelector('#opt-costs').checked ? 1 : 0,
-            group_days: root.querySelector('#opt-group-days').checked ? 1 : 0,
-            times: root.querySelector('#opt-times').checked ? 1 : 0,
-            notes: root.querySelector('#opt-notes').checked ? 1 : 0,
+            template: options.template,
+            lang: options.lang,
+            costs: options.costs ? 1 : 0,
+            group_days: options.group_days ? 1 : 0,
+            times: options.times ? 1 : 0,
+            notes: options.notes ? 1 : 0,
         }), '_blank', 'noopener');
     });
 
@@ -205,6 +261,7 @@ function queryFilters() {
 }
 
 async function refresh(root) {
+    store();
     const host = root.querySelector('#stats');
     host.innerHTML = html`<div class="loading">${t('common.loading')}</div>`;
 

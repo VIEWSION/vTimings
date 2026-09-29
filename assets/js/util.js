@@ -58,7 +58,7 @@ const formatters = new Map();
 function formatter(kind, options) {
     const key = `${lang()}:${kind}`;
     if (!formatters.has(key)) {
-        formatters.set(key, kind === 'number'
+        formatters.set(key, kind === 'number' || kind === 'integer'
             ? new Intl.NumberFormat(locale(), options)
             : new Intl.DateTimeFormat(locale(), options));
     }
@@ -67,6 +67,11 @@ function formatter(kind, options) {
 
 function number() {
     return formatter('number', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Anzahl mit Tausendertrennung ("8.844"). */
+export function count(value) {
+    return formatter('integer', { maximumFractionDigits: 0 }).format(value ?? 0);
 }
 
 export function money(amount, currency = 'EUR') {

@@ -13,7 +13,7 @@ import {
 } from './calendar.js';
 import { exportDialog, GROUP_KEYS, groupChips, reportDialog, statsHtml } from './output.js';
 import {
-    dateTimeToISO, dayLabel, debounce, esc, formatDateTime, hhmm, html, minutesToTime, money, shiftDays,
+    count, dateTimeToISO, dayLabel, debounce, esc, formatDateTime, hhmm, html, minutesToTime, money, shiftDays,
     startOfMonth, startOfWeek, timeToMinutes, todayISO,
 } from '../util.js';
 
@@ -62,10 +62,29 @@ let groupBy = 'client';
 const selected = new Set();
 let selectable = [];
 
+// Ausgangspunkt für Umschalt-Klick (Bereich auswählen): der zuletzt einzeln
+// an- oder abgehakte Eintrag.
+let anchorId = null;
+
+// Die gerade gezeigte Ansicht – für die Tastenkürzel, die am Dokument
+// hängen (⌘/Strg+A, Esc) und nicht an einem Element der View.
+let activeRoot = null;
+let keysBound = false;
+
 // Zuletzt geladene Einträge und Summen – daraus nennen die Dialoge für
 // Leistungsnachweis und Export, worauf sie sich beziehen.
 const loaded = new Map();
 let lastTotals = null;
+
+// Die Liste lädt seitenweise; `days` sind die bisher geladenen Tagesgruppen,
+// `total` die Zahl aller passenden Einträge. Was fehlt, meldet die Liste
+// oben und unten und lädt es auf Wunsch nach. `generation` zählt jedes
+// Neuladen mit – ein Nachladen für inzwischen geänderte Filter verfällt.
+const PAGE = 500;
+let days = [];
+let total = 0;
+let generation = 0;
+let loadingMore = null;
 
 /**
  * Gemerkten Zustand übernehmen. Erst beim ersten Aufruf, nicht beim Laden
@@ -356,7 +375,16 @@ function bind(root) {
         editEntry(root, Number(event.target.dataset.edit));
     });
 
-    // Häkchen einzeln oder für einen ganzen Tag.
+    activeRoot = root;
+    // Am Fenster in der Capture-Phase: Safari gibt ⌘-Kürzel sonst unter
+    // Umständen nicht bis zum <body> weiter. Einmal je Seite, nicht je Aufruf.
+    if (!keysBound) {
+        keysBound = true;
+        window.addEventListener('keydown', onSelectionKey, true);
+    }
+
+    // Häkchen einzeln oder für einen ganzen Tag. Klicks mit Umschalt- oder
+    // Befehlstaste kommen hier nicht an – die fängt der Klick-Handler unten ab.
     bindOnce(results, 'EntriesSelect', 'change', (event) => {
         if (event.target.matches('[data-select-all]')) {
             if (event.target.checked) for (const id of selectable) selected.add(id);
@@ -365,13 +393,18 @@ function bind(root) {
         }
 
         const one = event.target.closest('[data-select]');
-        const day = event.target.closest('[data-select-day]');
-        if (!one && !day) return;
+        if (one) {
+            const id = Number(one.dataset.select);
+            if (one.checked) selected.add(id);
+            else selected.delete(id);
+            anchorId = id;
+            return syncSelection(root);
+        }
 
-        const ids = one
-            ? [Number(one.dataset.select)]
-            : [...results.querySelectorAll(`[data-day="${day.dataset.selectDay}"] [data-select]:not(:disabled)`)]
-                .map((el) => Number(el.dataset.select));
+        const day = event.target.closest('[data-select-day]');
+        if (!day) return;
+        const ids = [...results.querySelectorAll(`[data-day="${day.dataset.selectDay}"] [data-select]:not(:disabled)`)]
+            .map((el) => Number(el.dataset.select));
         for (const id of ids) {
             if (event.target.checked) selected.add(id);
             else selected.delete(id);
@@ -385,10 +418,41 @@ function bind(root) {
             batchEdit(root);
         } else if (action === 'report' || action === 'export') {
             openOutput(action, selectionScope());
+        } else if (action === 'clear') {
+            selected.clear();
+            anchorId = null;
+            syncSelection(root);
         }
     });
 
     results.addEventListener('click', async (event) => {
+        const more = event.target.closest('[data-more]');
+        if (more) return loadMore(root, more.dataset.more === 'all');
+
+        // Wie in Desktop-Programmen, auf Zeile wie Kästchen: ⌘/Strg-Klick
+        // hakt an oder ab, Umschalt-Klick gibt dem Bereich bis zum zuletzt
+        // angeklickten Eintrag dessen Zustand. Alles in diesem einen Klick –
+        // Safari reicht die Tasten beim Klick aufs Label nicht ans Kästchen
+        // weiter, auf `change` ist dafür kein Verlass.
+        const modified = event.shiftKey || event.metaKey || event.ctrlKey;
+        const box = event.target.closest('.entry')?.querySelector('[data-select]');
+        if (modified && box && canSelect()) {
+            // Kein Öffnen, kein eigenes Umschalten des Kästchens und keine
+            // Textmarkierung, die Umschalt-Klick sonst aufzieht.
+            event.preventDefault();
+            window.getSelection()?.removeAllRanges();
+
+            const id = Number(box.dataset.select);
+            if (event.shiftKey && anchorId !== null) selectRange(anchorId, id, selected.has(anchorId));
+            else if (selected.has(id)) selected.delete(id);
+            else selected.add(id);
+            if (!event.shiftKey || anchorId === null) anchorId = id;
+            // Erst nach dem Klick: ein abgebrochener Klick setzt das Kästchen
+            // hinterher auf den alten Stand zurück.
+            setTimeout(() => syncSelection(root));
+            return;
+        }
+
         // Häkchen im Eintrag wählen aus, statt zu öffnen; markierter Text
         // (Notiz kopieren) ebenso wenig.
         const edit = event.target.closest('[data-edit]');
@@ -649,6 +713,9 @@ async function refresh(root) {
     selectable = [];
     loaded.clear();
     lastTotals = null;
+    days = [];
+    total = 0;
+    const ticket = ++generation;
 
     try {
         if (mode === 'stats') return await refreshStats(host);
@@ -656,11 +723,14 @@ async function refresh(root) {
         const data = await api.get('/entries', {
             ...filters,
             group: 'day',
-            // Ein Monatsraster umfasst bis zu sechs Wochen; die Liste zeigt
-            // ohnehin nur einen Ausschnitt und meldet den Rest.
-            limit: mode === 'calendar' ? 1000 : 500,
+            // Ein Monatsraster umfasst bis zu sechs Wochen; die Liste lädt
+            // seitenweise nach (loadMore).
+            limit: mode === 'calendar' ? 1000 : PAGE,
         });
+        if (ticket !== generation) return;
         lastTotals = data.totals;
+        total = data.total;
+        days = data.days;
         for (const day of data.days) {
             for (const entry of day.entries) loaded.set(entry.id, entry);
         }
@@ -681,12 +751,147 @@ async function refresh(root) {
         }
 
         if (canSelect()) selectable = [...loaded.keys()];
-        host.innerHTML = html`${summary(data)}${data.days.map(dayGroup)}`;
+        host.innerHTML = html`${summary(data)}${days.map(dayGroup)}${moreHtml()}`;
     } catch (error) {
+        if (ticket !== generation) return;
         toastError(error);
         host.innerHTML = html`<div class="card"><p class="card__body">${t('common.loadFailed')}</p></div>`;
     } finally {
+        if (ticket === generation) syncSelection(root);
+    }
+}
+
+/**
+ * Nächste Seite der Liste laden – oder mit `all` den ganzen Rest, in
+ * Schritten zu 1000 (mehr gibt der Server auf einmal nicht her). Jede
+ * Antwort wird sofort angehängt, so sieht man den Fortschritt.
+ */
+async function loadMore(root, all) {
+    const ticket = generation;
+    if (loadingMore === ticket) return;
+    loadingMore = ticket;
+
+    const host = root.querySelector('#results');
+    const pending = host.querySelector('#more');
+    for (const button of pending?.querySelectorAll('button') ?? []) button.disabled = true;
+
+    try {
+        while (loaded.size < total) {
+            pending?.querySelector('[data-more-info]')
+                ?.replaceChildren(t('entries.loadingMore', { shown: count(loaded.size), total: count(total) }));
+
+            const data = await api.get('/entries', {
+                ...filters,
+                group: 'day',
+                limit: all ? 1000 : PAGE,
+                offset: loaded.size,
+            });
+            if (ticket !== generation) return;
+            total = data.total;
+            lastTotals = data.totals;
+            if (!data.days.length) break;
+            appendDays(host, data.days);
+            if (!all) break;
+        }
+    } catch (error) {
+        if (ticket === generation) toastError(error);
+    } finally {
+        if (loadingMore === ticket) loadingMore = null;
+        if (ticket === generation) {
+            host.querySelector('.summary')?.replaceWith(fragment(summary({ totals: lastTotals })));
+            host.querySelector('#more')?.replaceWith(fragment(moreHtml()));
+            syncSelection(root);
+        }
+    }
+}
+
+/**
+ * Tage einer weiteren Seite anhängen. Die Seitengrenze kann mitten durch
+ * einen Tag laufen – dann wächst der zuletzt gezeigte Tag, samt Summe.
+ */
+function appendDays(host, incoming) {
+    const more = host.querySelector('#more');
+    let added = '';
+
+    for (const day of incoming) {
+        for (const entry of day.entries) loaded.set(entry.id, entry);
+
+        const last = days[days.length - 1];
+        if (last && last.date === day.date && !added) {
+            last.entries.push(...day.entries);
+            last.minutes += day.minutes;
+            last.hhmm = hhmm(last.minutes);
+            if (last.amount !== undefined) last.amount = Math.round((last.amount + day.amount) * 100) / 100;
+            host.querySelector(`[data-day="${last.date}"]`)?.replaceWith(fragment(dayGroup(last)));
+        } else {
+            days.push(day);
+            added += dayGroup(day);
+        }
+    }
+
+    more?.insertAdjacentHTML('beforebegin', added);
+    if (canSelect()) selectable = [...loaded.keys()];
+}
+
+/** Markup (auch leer) als einfügbare Knoten. */
+function fragment(markup) {
+    const template = document.createElement('template');
+    template.innerHTML = String(markup);
+    return template.content;
+}
+
+/** Hinweis am Ende der Liste, solange nicht alle Einträge geladen sind. */
+function moreHtml() {
+    const rest = total - loaded.size;
+    if (mode !== 'list' || rest <= 0) return '';
+
+    return html`
+        <div class="card more" id="more">
+            <span class="more__info" data-more-info>
+                ${t('entries.countOf', { shown: count(loaded.size), total: count(total) })}</span>
+            <span class="more__actions">
+                <button type="button" class="btn" data-more="page">
+                    ${t('entries.loadMore', { count: count(Math.min(PAGE, rest)) })}</button>
+                <button type="button" class="btn btn--primary" data-more="all">
+                    ${t('entries.loadAll', { count: count(total) })}</button>
+            </span>
+        </div>`;
+}
+
+/**
+ * Tastenkürzel der Auswahl: ⌘/Strg+A hakt alle geladenen Einträge an, Esc
+ * hebt die Auswahl auf. Nicht in Eingabefeldern (dort bleibt ⌘A "Text
+ * markieren") und nicht, solange ein Dialog offen ist.
+ */
+function onSelectionKey(event) {
+    const root = activeRoot;
+    if (!root?.isConnected || !canSelect() || document.querySelector('.overlay')) return;
+    const target = event.target instanceof Element ? event.target : document.activeElement;
+    if (target?.closest?.('input:not([type=checkbox]), textarea, select, [contenteditable]')) return;
+
+    // `code` statt nur `key`: mit gehaltener ⌘-Taste liefert nicht jeder
+    // Browser bei jeder Tastaturbelegung "a".
+    const keyA = event.code === 'KeyA' || event.key?.toLowerCase() === 'a';
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && keyA) {
+        if (!selectable.length) return;
+        event.preventDefault();
+        for (const id of selectable) selected.add(id);
         syncSelection(root);
+    } else if (event.key === 'Escape' && selected.size) {
+        selected.clear();
+        anchorId = null;
+        syncSelection(root);
+    }
+}
+
+/** Einen Bereich der Liste (in Anzeigereihenfolge) an- oder abhaken. */
+function selectRange(fromId, toId, on) {
+    const a = selectable.indexOf(fromId);
+    const b = selectable.indexOf(toId);
+    const ids = a < 0 || b < 0 ? [toId] : selectable.slice(Math.min(a, b), Math.max(a, b) + 1);
+    for (const id of ids) {
+        if (on) selected.add(id);
+        else selected.delete(id);
     }
 }
 
@@ -729,7 +934,8 @@ function syncSelection(root) {
         box.closest('.entry')?.classList.toggle('is-selected', box.checked);
     }
     for (const box of root.querySelectorAll('[data-select-day]')) {
-        const boxes = [...root.querySelectorAll(`[data-day="${box.dataset.selectDay}"] [data-select]:not(:disabled)`)];
+        // Nur im eigenen Tag suchen – bei Tausenden Tagen zählt das.
+        const boxes = [...box.closest('[data-day]').querySelectorAll('[data-select]:not(:disabled)')];
         const count = boxes.filter((el) => el.checked).length;
         box.checked = boxes.length > 0 && count === boxes.length;
         box.indeterminate = count > 0 && count < boxes.length;
@@ -746,9 +952,23 @@ function syncSelection(root) {
     bar.hidden = selected.size === 0;
     if (bar.hidden) return;
 
+    // Summen der Auswahl – dieselben Kennzahlen wie oben für die ganze Liste.
+    const picked = [...selected].map((id) => loaded.get(id)).filter(Boolean);
+    const minutes = picked.reduce((sum, entry) => sum + entry.duration_min, 0);
+    const amount = picked.some((entry) => entry.amount !== undefined)
+        ? Math.round(picked.reduce((sum, entry) => sum + (entry.amount ?? 0), 0) * 100) / 100
+        : undefined;
+
     bar.innerHTML = html`
+        <button type="button" class="icon-btn" data-batch="clear"
+            title="${t('batch.clear')}" aria-label="${t('batch.clear')}">${icon('close')}</button>
         <span class="batchbar__info">
-            <strong class="batchbar__count">${t('batch.selected', { count: selected.size })}</strong>
+            <strong class="batchbar__count">${selected.size === 1
+                ? t('batch.selectedOne')
+                : t('batch.selected', { count: count(selected.size) })}</strong>
+            <span><strong class="batchbar__num">${hhmm(minutes)}</strong>
+                <span class="muted">${t('common.hours')}</span></span>
+            ${amount !== undefined ? html`<strong class="batchbar__num">${money(amount)}</strong>` : ''}
         </span>
         <span class="batchbar__actions">
             <button type="button" class="btn" data-batch="report">${t('output.report')}</button>
@@ -818,10 +1038,13 @@ function summary(data) {
             <span><strong>${data.totals.hhmm}</strong> <span class="muted">${t('common.hours')}</span></span>
             ${data.totals.amount !== undefined
                 ? html`<span><strong>${money(data.totals.amount)}</strong></span>` : ''}
-            <span class="muted">${data.totals.entries} ${t('common.entries')}</span>
-            ${data.total > data.totals.entries
-                ? html`<span class="muted">
-                    ${t('entries.countOf', { shown: data.totals.entries, total: data.total })}</span>` : ''}
+            <span class="muted">${count(data.totals.entries)} ${t('common.entries')}</span>
+            ${loaded.size < total ? html`
+                <span class="summary__partial">
+                    ${t('entries.countOf', { shown: count(loaded.size), total: count(total) })}
+                    ${mode === 'list' ? html`
+                        <button type="button" class="chip" data-more="all">${t('entries.loadAllShort')}</button>` : ''}
+                </span>` : ''}
         </div>`;
 }
 

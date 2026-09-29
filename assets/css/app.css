@@ -519,6 +519,9 @@ pre {
 
 .daygroup__head h3 { font-variant-numeric: tabular-nums; }
 .daygroup__head .check + h3 { flex: 1; }
+/* Mit "Alle laden" stehen schnell Tausende Tage untereinander – was nicht im
+   Bild ist, überspringt der Browser beim Layout. */
+.daygroup { content-visibility: auto; contain-intrinsic-size: auto 9rem; }
 
 /* Einträge-Liste: jeder Eintrag als eigene Kachel mit etwas Luft dazwischen
    statt durchgehender Trennlinien – Timer und Portal behalten die kompakte
@@ -575,6 +578,9 @@ pre {
 .batchbar[hidden] { display: none; }
 .batchbar__info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-right: auto; }
 .batchbar__count { font-variant-numeric: tabular-nums; }
+.batchbar__info { column-gap: 1.25rem; }
+.batchbar__num { font-variant-numeric: tabular-nums; }
+.batchbar > .icon-btn { margin-left: -0.4rem; }
 .batchbar__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 @media (min-width: 900px) {
     .batchbar { bottom: 1rem; }
@@ -650,6 +656,26 @@ pre {
 }
 .summary .check { align-self: center; margin-right: -0.75rem; }
 .summary strong { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+/* Nicht alles geladen: deutlich, damit "Gesamt" nicht still unvollständig ist. */
+.summary__partial {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-left: auto;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* Ende der seitenweise geladenen Liste. */
+.more {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.85rem 1.1rem;
+}
+.more__info { margin-right: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.more__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 /* -- Kalender ------------------------------------------------------------- */
 /* Zweite Darstellung der Einträge. Tag und Woche sind ein Stundenraster mit

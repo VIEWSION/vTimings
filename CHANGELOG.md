@@ -12,6 +12,25 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.10.0] – 2026-09-29
+
+### Neu
+- Einträge: Die Auswahlleiste zeigt neben der Anzahl auch Stunden und
+  Betrag der angehakten Einträge; das ✕ davor hebt die Auswahl auf.
+- Einträge: Mehrfachauswahl wie in Desktop-Programmen – Umschalt-Klick auf
+  ein Kästchen oder eine Zeile gibt dem Bereich bis zum zuletzt angeklickten
+  Eintrag dessen Zustand, ⌘-/Strg-Klick hakt einen Eintrag an oder ab, ohne
+  ihn zu öffnen. ⌘/Strg+A wählt alle geladenen Einträge aus, Esc hebt die
+  Auswahl auf (nicht in Eingabefeldern und Dialogen).
+- Einträge: Die Liste lädt in Schritten zu 500 und bietet am Ende „Weitere
+  500 laden“ und „Alle laden“ an. Oben neben den Summen steht deutlich, wie
+  viele von wie vielen geladen sind.
+
+### Behoben
+- Einträge: Bei mehr als 500 Treffern (etwa mit Zeitraum „Gesamt“) fehlten
+  die älteren Einträge in der Liste ohne jeden Hinweis – die Summen oben
+  zählten dagegen alle. Der Hinweis „zeigt … von …“ erschien nie.
+
 ## [1.9.0] – 2026-09-29
 
 ### Neu

@@ -90,19 +90,6 @@ unterscheidbar zeigen (z. B. der segmentierte Tagesbalken im Kundenportal),
 reicht die geerbte Farbe nicht – siehe `PortalController::PALETTE` als
 Muster für eine Ersatzpalette.
 
-## Bekannte Baustellen (aus offenen Issues)
-
-- **#3 Kunden-Zeit-Offset:** Kundenportal zeigt aktuell ungefiltert bis zur
-  Sekunde. Gewünscht: pro Kunde einstellbare Sichtbarkeitsgrenze nach
-  Kalendertag (nicht rollierende Stunden), damit frische/unfertige Einträge
-  nicht sofort sichtbar sind.
-- **#4 Druckausgabe leer:** Safari auf dem Mac erzeugt aus der Druckansicht
-  ein leeres bzw. unvollständiges PDF.
-- **#1 Projekt-Selektion:** Klickbarkeit bei nur einem Projekt behoben
-  (`e7369d1`). Offen: Höhenzittern zwischen `.badge` und `.btn--small`
-  (unterschiedliche `min-height`) beim Umschalten der Projektauswahl im
-  Portal-Kopf.
-
 ## Testzugänge (lokal)
 
 ```

@@ -104,7 +104,10 @@ export function dialog({ title, body, buttons = [], onMount }) {
         document.body.append(overlay);
 
         onMount?.(overlay);
-        overlay.querySelector('input, select, textarea, button')?.focus();
+        // Erstes Bedienelement im Inhalt, nicht das ✕ im Kopf – sonst landet
+        // z. B. im Teilprojekt-Picker die Eingabe nicht im Suchfeld.
+        const first = ':is(input, select, textarea, button):not(:disabled):not([hidden])';
+        (bodyHost.querySelector(first) ?? foot.querySelector(first))?.focus();
     });
 }
 

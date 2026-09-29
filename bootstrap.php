@@ -13,6 +13,10 @@ define('VT_ROOT', __DIR__);
 define('VT_DATA', VT_ROOT . '/data');
 define('VT_START', microtime(true));
 
+// Programmversion (SemVer). Einzige Quelle ist die Datei VERSION; was sich
+// je Version geändert hat, steht in CHANGELOG.md.
+define('VT_VERSION', trim((string) @file_get_contents(VT_ROOT . '/VERSION')) ?: 'dev');
+
 // Gerechnet und gespeichert wird durchgängig in UTC; die Anzeige-Zeitzone
 // steckt in der Konfiguration und wird erst bei der Formatierung angewandt.
 date_default_timezone_set('UTC');

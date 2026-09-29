@@ -13,6 +13,7 @@ const STRINGS = {
     de: {
         // -- Allgemein ------------------------------------------------------
         'app.tagline': 'Zeiterfassung',
+        'app.version': 'Version {version} – Änderungen siehe CHANGELOG.md',
         'common.loading': 'Lade …',
         'common.save': 'Speichern',
         'common.cancel': 'Abbrechen',
@@ -409,6 +410,7 @@ const STRINGS = {
 
         // -- Anmeldung und Hülle --------------------------------------------
         'auth.signIn': 'Sign in',
+        'app.version': 'Version {version} – see CHANGELOG.md for changes',
         'auth.signOut': 'Sign out',
         'auth.expired': 'Session expired. Please sign in again.',
         'auth.remember': 'Keep me signed in',

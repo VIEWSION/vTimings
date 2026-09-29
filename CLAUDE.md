@@ -60,6 +60,10 @@ stattdessen eine Funktion, siehe `ADMIN_NAV()` in `app.js` und
 `groupLabel()` in `views/output.js`. Wo die gewählte Sprache gespeichert wird,
 steht im README-Abschnitt „Sprache“.
 
+**Abstände:** Ein Container, in den mehrere `.card` gerendert werden (z. B.
+`#results` in `entries.js`), bekommt die Klasse `stack` – sonst liegen die
+Karten ohne Abstand aneinander. Keine Einzel-Margins an Karten.
+
 Formulare in Dialogen: `saveDialog()` + `showFieldErrors()` aus `ui.js`
 verwenden, nicht `dialog()` direkt mit manuellem try/catch. `saveDialog`
 hält den Dialog bei einem Fehler offen (Eingaben bleiben erhalten) und
@@ -131,6 +135,17 @@ Kunden, ~320 Projekte, ~425 Teilprojekte, ~8.844 Einträge, Zeitraum 2005–
 heute. Reale Kundennamen und Notizen – beim Anlegen von Testdaten (z. B. für
 Screenshots oder um einen Edge Case wie „mehrere Projekte an einem Tag“
 nachzustellen) hinterher wieder löschen, nicht im Bestand liegen lassen.
+
+## Version und Changelog
+
+Version nach SemVer in der Datei `VERSION` (einzige Quelle – `bootstrap.php`
+liest sie als `VT_VERSION`, `index.php` reicht sie als `data-version` an die
+Oberfläche). Jede für den Anwender sichtbare Änderung bekommt einen Eintrag in
+`CHANGELOG.md` (Keep a Changelog, Deutsch) und im selben Commit die passende
+Versionserhöhung: Minor für neue Funktionen, Patch für Fehlerbehebungen,
+Major nur bei Brüchen, die Handarbeit erfordern (z. B. API-Änderung für
+native Clients). Reine Doku-/Refactoring-Commits ohne sichtbare Wirkung
+brauchen keine neue Version.
 
 ## Nach jeder Änderung
 

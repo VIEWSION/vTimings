@@ -90,7 +90,7 @@ export const settingsView = {
                     </div>
                 </form>
 
-                <div id="users"></div>
+                <div class="stack" id="users"></div>
 
                 <section class="card">
                     <header class="card__head"><h2>${t('settings.account')}</h2></header>

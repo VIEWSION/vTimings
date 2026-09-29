@@ -110,6 +110,9 @@ Schnellzeitraum wie „Dieser Monat“ wird als solcher gespeichert und beim
 nächsten Aufruf neu berechnet. Der Ankertag im Kalender liegt im
 `sessionStorage`: er übersteht ein Neuladen, ein neuer Tab beginnt bei heute.
 
+**Version:** steht in `VERSION`, die Änderungen je Version in
+[CHANGELOG.md](CHANGELOG.md).
+
 ---
 
 ## Kommandos

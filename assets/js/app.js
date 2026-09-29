@@ -61,6 +61,8 @@ function homePath() {
 }
 
 const app = document.querySelector('#app');
+// Programmversion aus index.php (Datei VERSION) – oben links neben dem Namen.
+const VERSION = document.documentElement.dataset.version || '';
 let currentView = null;
 let pollTimer = null;
 let clockTimer = null;
@@ -186,20 +188,31 @@ function storeRememberChoice(checked) {
 function renderShell() {
     const items = nav();
 
-    // Der Sprachumschalter steht bewusst neben der Navigation, nicht darin:
-    // auf schmalen Displays weicht .topbar__nav der Tabbar, erreichbar
-    // bleiben soll er trotzdem.
+    // Abmelden und Sprachumschalter stehen bewusst neben der Navigation, nicht
+    // darin: auf schmalen Displays weicht .topbar__nav der Tabbar, erreichbar
+    // bleiben sollen beide trotzdem.
     app.innerHTML = html`
         <div class="shell">
             <header class="topbar">
-                <span class="topbar__brand">vTimings</span>
+                <span class="topbar__brand">
+                    vTimings
+                    ${VERSION ? html`<span class="topbar__version" title="${t('app.version', { version: VERSION })}">v${VERSION}</span>` : ''}
+                </span>
                 <div class="topbar__timer" id="topbar-timer"></div>
-                ${langSwitch('topbar__lang')}
                 <nav class="topbar__nav">
                     ${items.map((item) => html`
                         <a class="topbar__link" href="#${item.path}" data-path="${item.path}">${item.label}</a>`)}
-                    <button class="btn btn--ghost btn--small" id="logout">${t('auth.signOut')}</button>
                 </nav>
+                <div class="topbar__tools">
+                    <button type="button" class="icon-btn topbar__logout" id="logout"
+                            title="${t('auth.signOut')}" aria-label="${t('auth.signOut')}">
+                        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3v9"/><path d="M6.6 6.6a8 8 0 1 0 10.8 0"/>
+                        </svg>
+                    </button>
+                    ${langSwitch('topbar__lang')}
+                </div>
             </header>
             <main class="main" id="view"></main>
             <nav class="tabbar" style="grid-template-columns: repeat(${items.length}, 1fr)">

@@ -200,7 +200,7 @@ export const entriesView = {
                             </div>` : ''}
                     </div>
                 </form>
-                <div id="results"><div class="loading">${t('common.loading')}</div></div>
+                <div class="stack" id="results"><div class="loading">${t('common.loading')}</div></div>
                 <div class="batchbar card" id="batchbar" hidden></div>
             </section>`;
 

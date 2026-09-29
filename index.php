@@ -26,7 +26,7 @@ header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
 ?>
 <!doctype html>
-<html lang="de" data-base="<?= $e($base) ?>">
+<html lang="de" data-base="<?= $e($base) ?>" data-version="<?= $e(VT_VERSION) ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">

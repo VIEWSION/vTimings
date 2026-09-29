@@ -109,6 +109,7 @@ switch ($command) {
 
     case 'status':
         $file = (string) Config::get('db_file');
+        out('Version:    ' . VT_VERSION);
         out('Datenbank:  ' . $file . (is_file($file) ? ' (' . number_format(filesize($file) / 1024, 1) . ' KB)' : ' — fehlt'));
         if (!is_file($file)) {
             break;

@@ -111,6 +111,7 @@ final class Kernel
         $r->get('/api/health', function (): array {
             return [
                 'app'     => Config::get('app_name'),
+                'version' => VT_VERSION,
                 'php'     => PHP_VERSION,
                 'sqlite'  => (string) Database::value('SELECT sqlite_version()'),
                 'schema'  => Migrator::currentVersion(),

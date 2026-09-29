@@ -99,10 +99,33 @@ pre {
     border-bottom: 1px solid var(--border);
 }
 
-.topbar__brand { font-weight: 700; letter-spacing: -0.01em; }
-/* Nach rechts geschoben wird der Sprachumschalter (margin-left: auto), der
-   direkt davor steht – die Navigation schließt dann daran an. */
-.topbar__nav { display: none; align-items: center; gap: 0.25rem; }
+.topbar__brand {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+.topbar__version {
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--text-muted);
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Der laufende Timer (flex: 1) schiebt Navigation und Werkzeuge nach
+   rechts. Die Menüpunkte bekommen etwas Luft untereinander. */
+.topbar__nav { display: none; align-items: center; gap: 0.5rem; }
+
+/* Abmelden und Sprache: immer sichtbar, auch wenn die Navigation auf
+   schmalen Displays der Tabbar weicht. Auf breiten Displays durch eine
+   Linie von den Menüpunkten abgesetzt. */
+.topbar__tools { display: flex; align-items: center; gap: 0.5rem; flex: none; }
+.topbar__logout { display: inline-grid; place-items: center; padding: 0.4rem; }
+.topbar__logout:hover { color: var(--danger); }
 
 .topbar__link {
     padding: 0.4rem 0.7rem;
@@ -140,8 +163,7 @@ pre {
 .langswitch__btn:hover { color: var(--text); }
 .langswitch__btn.is-active { background: var(--accent); color: #fff; }
 
-/* Im Kopf sitzt er zwischen laufendem Timer und Navigation … */
-.topbar__lang { margin-left: auto; margin-right: 0.5rem; }
+/* Im Kopf sitzt er ganz rechts, neben dem Abmelden … */
 
 /* … im Anmeldefeld mittig unter dem Button. */
 .login__lang { align-self: center; margin-top: 0.5rem; }
@@ -211,6 +233,7 @@ pre {
 
 @media (min-width: 900px) {
     .topbar__nav { display: flex; }
+    .topbar__tools { margin-left: 0.25rem; padding-left: 0.85rem; border-left: 1px solid var(--border); }
     .tabbar { display: none; }
     .main { padding: 1.5rem; padding-bottom: 3rem; }
 }

@@ -21,6 +21,7 @@ final class EntryController
         $r->get('/api/entries/{id}', [self::class, 'show'], ['auth' => 'user']);
         $r->post('/api/entries', [self::class, 'store']);
         $r->post('/api/entries/batch', [self::class, 'batch']);
+        $r->post('/api/entries/batch/remove', [self::class, 'batchRemove']);
         $r->patch('/api/entries/{id}', [self::class, 'update']);
         $r->delete('/api/entries/{id}', [self::class, 'destroy']);
         $r->post('/api/entries/{id}/restore', [self::class, 'restore']);
@@ -195,6 +196,30 @@ final class EntryController
         return EntryRepo::batchUpdate(array_map('intval', $ids), $data, $billed);
     }
 
+    /**
+     * Mehrere Einträge auf einmal in den Papierkorb legen, wiederherstellen
+     * oder endgültig löschen. `action`: trash | restore | purge.
+     */
+    public static function batchRemove(Request $req): array
+    {
+        $unknown = array_diff(array_keys($req->body), ['ids', 'action']);
+        if ($unknown !== []) {
+            throw HttpException::badRequest('Unbekannte Angaben: ' . implode(', ', $unknown));
+        }
+
+        $v = new Validator($req->body);
+        $ids = $req->body['ids'] ?? null;
+        if (!is_array($ids) || $ids === [] || count($ids) > 1000) {
+            $v->fail('ids', 'Zwischen 1 und 1000 Einträge auswählen.');
+        } elseif (array_filter($ids, static fn($id) => !is_int($id) && !(is_string($id) && ctype_digit($id))) !== []) {
+            $v->fail('ids', 'Ungültige Eintrags-IDs.');
+        }
+        $action = $v->enum('action', ['trash', 'restore', 'purge'], true);
+        $v->validate();
+
+        return EntryRepo::batchRemove(array_map('intval', $ids), (string) $action);
+    }
+
     public static function destroy(Request $req): array
     {
         EntryRepo::delete(self::id($req));
@@ -283,11 +308,12 @@ final class EntryController
         return [
             'from'          => $q['from'] ?? null,
             'to'            => $q['to'] ?? null,
-            'client_id'     => isset($q['client_id']) ? (int) $q['client_id'] : null,
-            'project_id'    => isset($q['project_id']) ? (int) $q['project_id'] : null,
+            'client_id'     => self::idList($q['client_id'] ?? null, 'client_id'),
+            'project_id'    => self::idList($q['project_id'] ?? null, 'project_id'),
             'subproject_id' => isset($q['subproject_id']) ? (int) $q['subproject_id'] : null,
             'q'             => (string) ($q['q'] ?? ''),
             'billed'        => self::tribool($q['billed'] ?? null),
+            'archived'      => self::tribool($q['archived'] ?? null),
             'billable'      => self::tribool($q['billable'] ?? null),
             'type'          => $q['type'] ?? null,
             'trashed'       => (string) ($q['trashed'] ?? '0') === '1',
@@ -295,6 +321,19 @@ final class EntryController
             'offset'        => isset($q['offset']) ? (int) $q['offset'] : 0,
             'order'         => (string) ($q['order'] ?? 'desc'),
         ];
+    }
+
+    /** `client_id=3` oder `client_id=3,5` -> Liste (null = kein Filter). */
+    private static function idList(mixed $raw, string $name): ?array
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (!is_string($raw) || !preg_match('/^\d+(,\d+)*$/', $raw)) {
+            throw HttpException::badRequest("Ungültige Angabe für $name.");
+        }
+        $ids = array_values(array_unique(array_map('intval', explode(',', $raw))));
+        return count($ids) > 200 ? throw HttpException::badRequest("Zu viele Werte für $name.") : $ids;
     }
 
     private static function tribool(mixed $value): ?bool

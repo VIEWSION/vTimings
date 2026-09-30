@@ -149,6 +149,23 @@ final class ClientRepo
     {
         self::findOrFail($id);
 
+        // Auch Einträge im Papierkorb zählen: beim Wiederherstellen hätten sie
+        // sonst keinen Kunden mehr.
+        $counts = Database::one(
+            'SELECT COUNT(*) AS total, COALESCE(SUM(e.deleted_at IS NOT NULL), 0) AS trashed
+               FROM entries e
+               JOIN subprojects s ON s.id = e.subproject_id
+               JOIN projects p ON p.id = s.project_id
+              WHERE p.client_id = :id',
+            ['id' => $id]
+        );
+        if ((int) $counts['total'] > 0) {
+            throw HttpException::conflict(
+                SubprojectRepo::entriesMessage('Kunde', (int) $counts['total'], (int) $counts['trashed']),
+                ['entries' => (int) $counts['total'], 'trashed' => (int) $counts['trashed']]
+            );
+        }
+
         $projects = (int) Database::value(
             'SELECT COUNT(*) FROM projects WHERE client_id = :id AND deleted_at IS NULL',
             ['id' => $id]

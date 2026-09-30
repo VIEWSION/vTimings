@@ -7,13 +7,13 @@ import { t } from '../i18n.js';
 import { enhanceCombos } from '../combo.js';
 import { icon } from '../icons.js';
 import { loadPref, savePref } from '../prefs.js';
-import { bindOnce, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
+import { bindOnce, confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
 import {
     billedLabel, billedMark, calendarHtml, calendarRange, minutesAt, SCALES, scrollToFirstEvent, shiftAnchor,
 } from './calendar.js';
 import { exportDialog, GROUP_KEYS, groupChips, reportDialog, statsHtml } from './output.js';
 import {
-    count, dateTimeToISO, dayLabel, debounce, esc, formatDateTime, hhmm, html, minutesToTime, money, shiftDays,
+    count, dateTimeToISO, dayLabel, debounce, decimal, esc, formatDateTime, hhmm, html, minutesToTime, money, shiftDays,
     startOfMonth, startOfWeek, timeToMinutes, todayISO,
 } from '../util.js';
 
@@ -26,6 +26,7 @@ const filters = {
     q: '',
     billed: '',
     trashed: '0',
+    archived: '0', // '1' = Einträge und Auswahlfelder auch für archivierte Kunden/Projekte
 };
 
 // Zuletzt gewählter Schnellzeitraum ("Dieser Monat" usw.). Solange er gilt,
@@ -40,6 +41,14 @@ let range = null;
 let years = [];
 let yearsKey = null;
 let yearsRequest = 0;
+
+// Kunden und Projekte mit Einträgen zu den übrigen Filtern (Zeitraum, Status,
+// Suche …): nur diese stehen in den Auswahlfeldern. Die Kundenliste hängt
+// nicht an der eigenen Kundenauswahl, die Projektliste nur an den gewählten
+// Kunden – sonst ließe sich die Auswahl nie wieder erweitern. null = noch
+// nicht geladen, dann gilt keine Einschränkung.
+let facets = { clients: null, projects: null };
+let facetsRequest = 0;
 
 let initialized = false;
 
@@ -153,6 +162,10 @@ export const entriesView = {
         // Der Kalender ist vorerst den Administratoren vorbehalten.
         if (!canEdit()) mode = 'list';
 
+        // Der Baum wurde oben ohne Archivierte geladen; war der Schalter beim
+        // letzten Mal an, fehlen sie sonst in den Auswahlfeldern.
+        if (filters.archived === '1') await loadTree({ force: true, archived: true });
+
         root.innerHTML = html`
             <section class="stack ${mode === 'calendar' ? 'is-calendar' : ''}" id="entries">
                 <form class="card filters" id="filters">
@@ -178,11 +191,13 @@ export const entriesView = {
                         ${showClientFilter() ? html`
                             <label class="field field--inline field--grow">
                                 <span class="field__label">${t('common.client')}</span>
-                                <select class="input" name="client_id" data-combo></select>
+                                <select class="input" name="client_id" multiple data-combo
+                                    data-placeholder="${t('entries.allClients')}"></select>
                             </label>` : ''}
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.project')}</span>
-                            <select class="input" name="project_id" data-combo></select>
+                            <select class="input" name="project_id" multiple data-combo
+                                data-placeholder="${t('entries.allProjects')}"></select>
                         </label>
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.subproject')}</span>
@@ -222,6 +237,9 @@ export const entriesView = {
                                 <label class="switch">
                                     <input type="checkbox" name="trashed"> <span>${t('entries.trash')}</span>
                                 </label>
+                                <label class="switch">
+                                    <input type="checkbox" name="archived"> <span>${t('master.showArchived')}</span>
+                                </label>
                                 <button type="button" class="btn" data-output="report">${t('output.report')}</button>
                                 <button type="button" class="btn" data-output="export">${t('output.export')}</button>
                                 <button type="button" class="btn btn--primary" id="new-entry">${t('entries.add')}</button>
@@ -232,6 +250,7 @@ export const entriesView = {
                 <div class="batchbar card" id="batchbar" hidden></div>
             </section>`;
 
+        await loadFacets();
         fillFilters(root);
         enhanceCombos(root);
         bind(root);
@@ -245,19 +264,57 @@ function colorAttr(color) {
     return color ? ` data-color="${esc(color)}"` : '';
 }
 
+/** Farbe und Archiv-Kennzeichnung (combo.js) für eine Option. */
+function optionAttrs(item) {
+    return colorAttr(item.color) + (item.archived ? ' data-archived="1"' : '');
+}
+
+/**
+ * Kunden mit Projekten und Teilprojekten für die Auswahlfelder. Archivierte
+ * fehlen, solange "Archivierte" nicht angehakt ist – der gemeinsame Baum kann
+ * sie enthalten, wenn die Stammdaten sie zuletzt gezeigt haben.
+ */
+function visibleClients() {
+    const showArchived = filters.archived === '1';
+    // Was gerade gewählt ist, bleibt in der Liste – auch ohne Einträge zu den
+    // übrigen Filtern. Sonst spränge die Auswahl zurück auf "alle", statt eine
+    // leere Liste zu zeigen.
+    const pickedClients = idList(filters.client_id);
+    const pickedProjects = idList(filters.project_id);
+    const inFacet = (set, id, picked) => !set || set.has(String(id)) || picked.includes(String(id));
+
+    return (state.tree?.clients || [])
+        .filter((c) => (showArchived || !c.archived) && inFacet(facets.clients, c.id, pickedClients))
+        .map((c) => ({
+            ...c,
+            projects: c.projects
+                .filter((p) => (showArchived || !p.archived) && inFacet(facets.projects, p.id, pickedProjects))
+                .map((p) => ({ ...p, subprojects: showArchived ? p.subprojects : p.subprojects.filter((s) => !s.archived) })),
+        }));
+}
+
+/** "3,5" -> ['3', '5']; leer = keine Einschränkung. */
+function idList(value) {
+    return value ? String(value).split(',').filter(Boolean) : [];
+}
+
 /**
  * Kunden-, Projekt- und Teilprojektauswahl befüllen und aufeinander
  * abstimmen. Kunden und Projekte stehen nach "zuletzt aktiv" – woran gerade
  * gearbeitet wird, steht oben.
  */
 function fillFilters(root) {
-    const clients = byActivity(state.tree?.clients || []);
+    const clients = byActivity(visibleClients());
     const clientSelect = root.querySelector('[name=client_id]');
 
     if (clientSelect) {
-        clientSelect.innerHTML = `<option value="">${esc(t('entries.allClients'))}</option>` +
-            clients.map((c) => `<option value="${c.id}"${colorAttr(c.color)}>${esc(c.name)}</option>`).join('');
-        clientSelect.value = filters.client_id;
+        // Mehrfachauswahl: nichts gewählt = alle (Platzhalter am Feld).
+        const chosen = idList(filters.client_id).filter((id) => clients.some((c) => String(c.id) === id));
+        filters.client_id = chosen.join(',');
+        clientSelect.innerHTML = clients
+            .map((c) => `<option value="${c.id}"${optionAttrs(c)}${chosen.includes(String(c.id)) ? ' selected' : ''}>${esc(c.name)}</option>`)
+            .join('');
+        clientSelect.comboSync?.();
     }
 
     fillProjects(root);
@@ -266,32 +323,39 @@ function fillFilters(root) {
     // Nur Administratoren haben den Papierkorb-Schalter.
     const trashed = root.querySelector('[name=trashed]');
     if (trashed) trashed.checked = filters.trashed === '1';
+    const archived = root.querySelector('[name=archived]');
+    if (archived) archived.checked = filters.archived === '1';
 }
 
 function fillProjects(root) {
-    const clients = state.tree?.clients || [];
-    const clientId = Number(filters.client_id) || null;
+    const clients = visibleClients();
+    const clientIds = idList(filters.client_id);
     const select = root.querySelector('[name=project_id]');
 
     const projects = byActivity(clients
-        .filter((c) => !clientId || c.id === clientId)
+        .filter((c) => !clientIds.length || clientIds.includes(String(c.id)))
         .flatMap((c) => c.projects.map((p) => ({ ...p, client: c.name }))));
 
-    const many = clients.length > 1 && !clientId;
-    select.innerHTML = `<option value="">${esc(t('entries.allProjects'))}</option>` + projects
-        .map((p) => `<option value="${p.id}"${colorAttr(p.color)}>${esc(many ? `${p.client} | ${p.name}` : p.name)}</option>`)
-        .join('');
+    // Der Kundenname davor nur, wenn Projekte verschiedener Kunden im Spiel sind.
+    const many = clients.length > 1 && clientIds.length !== 1;
 
-    // Auswahl nur halten, wenn sie zum aktuellen Kunden noch passt.
-    select.value = projects.some((p) => String(p.id) === filters.project_id) ? filters.project_id : '';
-    filters.project_id = select.value;
+    // Auswahl nur halten, soweit sie zu den gewählten Kunden noch passt.
+    const chosen = idList(filters.project_id).filter((id) => projects.some((p) => String(p.id) === id));
+    filters.project_id = chosen.join(',');
+
+    select.innerHTML = projects
+        .map((p) => `<option value="${p.id}"${optionAttrs(p)}${chosen.includes(String(p.id)) ? ' selected' : ''}>${esc(many ? `${p.client} | ${p.name}` : p.name)}</option>`)
+        .join('');
+    select.comboSync?.();
 
     fillSubprojects(root);
 }
 
 function fillSubprojects(root) {
-    const clients = state.tree?.clients || [];
-    const projectId = Number(filters.project_id) || null;
+    const clients = visibleClients();
+    // Teilprojekte gibt es nur, wenn genau ein Projekt gewählt ist.
+    const projectIds = idList(filters.project_id);
+    const projectId = projectIds.length === 1 ? Number(projectIds[0]) : null;
     const select = root.querySelector('[name=subproject_id]');
 
     const projects = clients.flatMap((c) => c.projects);
@@ -303,7 +367,7 @@ function fillSubprojects(root) {
     select.disabled = !projectId;
     select.innerHTML = projectId
         ? `<option value="">${esc(t('entries.allSubprojects'))}</option>` +
-          subs.map((s) => `<option value="${s.id}"${colorAttr(s.color)}>${esc(s.name)}</option>`).join('')
+          subs.map((s) => `<option value="${s.id}"${optionAttrs(s)}>${esc(s.name)}</option>`).join('')
         : `<option value="">${esc(t('entries.pickProjectFirst'))}</option>`;
 
     select.value = subs.some((s) => String(s.id) === filters.subproject_id) ? filters.subproject_id : '';
@@ -317,12 +381,13 @@ function bind(root) {
         const data = new FormData(form);
         filters.from = data.get('from') || '';
         filters.to = data.get('to') || '';
-        filters.client_id = data.get('client_id') || '';
-        filters.project_id = data.get('project_id') || '';
+        filters.client_id = data.getAll('client_id').join(',');
+        filters.project_id = data.getAll('project_id').join(',');
         filters.subproject_id = data.get('subproject_id') || '';
         filters.q = data.get('q') || '';
         filters.billed = data.get('billed') || '';
         filters.trashed = form.trashed?.checked ? '1' : '0';
+        filters.archived = form.archived?.checked ? '1' : '0';
     };
 
     const update = () => {
@@ -330,7 +395,7 @@ function bind(root) {
         refresh(root);
     };
 
-    form.addEventListener('change', (event) => {
+    form.addEventListener('change', async (event) => {
         if (event.target.name === 'range') {
             range = event.target.value || null;
             // "Benutzerdefiniert" lässt die Daten stehen, wie sie sind.
@@ -341,10 +406,20 @@ function bind(root) {
             }
         }
         read();
+        if (event.target.name === 'archived') {
+            // Der Baum wird passend nachgeladen (mit bzw. ohne Archivierte).
+            await loadTree({ force: true, archived: filters.archived === '1' });
+            fillFilters(root);
+            enhanceCombos(root);
+            return refresh(root);
+        }
         if (event.target.name === 'from' || event.target.name === 'to') range = null;
         // Die Auswahl hängt zusammen: ein anderer Kunde ändert die Projekte,
         // ein anderes Projekt die Teilprojekte.
-        if (event.target.name === 'client_id') fillProjects(root);
+        if (event.target.name === 'client_id') {
+            facets.projects = null; // gilt für die vorige Kundenauswahl
+            fillProjects(root);
+        }
         else if (event.target.name === 'project_id') fillSubprojects(root);
         refresh(root);
     });
@@ -422,6 +497,8 @@ function bind(root) {
             batchEdit(root);
         } else if (action === 'report' || action === 'export') {
             openOutput(action, selectionScope());
+        } else if (['trash', 'restore', 'purge'].includes(action)) {
+            batchRemove(root, action);
         } else if (action === 'clear') {
             selected.clear();
             anchorId = null;
@@ -477,6 +554,17 @@ function bind(root) {
         if (restore) {
             try {
                 await api.post(`/entries/${restore.dataset.restore}/restore`);
+                await refresh(root);
+            } catch (error) { toastError(error); }
+            return;
+        }
+
+        const purge = event.target.closest('[data-purge]');
+        if (purge) {
+            if (!await confirmDialog(t('entries.purgeTitle'), t('entries.purgeText'), t('common.delete'))) return;
+            try {
+                await api.delete(`/entries/${purge.dataset.purge}/purge`);
+                toast(t('common.deleted'), 'ok', 2000);
                 await refresh(root);
             } catch (error) { toastError(error); }
         }
@@ -596,6 +684,7 @@ function resetFilters(form) {
         q: '',
         billed: '',
         trashed: '0',
+        archived: '0',
     });
     form.from.value = filters.from;
     form.to.value = filters.to;
@@ -637,6 +726,49 @@ function yearsHtml() {
         <optgroup label="${t('entries.rangeYears')}">
             ${list.map((year) => html`<option value="y${year}">${year}</option>`)}
         </optgroup>`;
+}
+
+const sameSet = (a, b) => a === b || (a && b && a.size === b.size && [...a].every((x) => b.has(x)));
+
+/** Kunden/Projekte mit Einträgen zu den aktuellen Filtern laden. */
+async function loadFacets() {
+    const { client_id, project_id, subproject_id, ...base } = queryFilters();
+
+    // Bei jedem Aufruf neu fragen, nicht nur bei geänderten Filtern: neue oder
+    // verschobene Einträge ändern die Antwort, ohne dass ein Filter wechselt.
+    // Nur die jüngste Antwort zählt, falls Filter schnell wechseln.
+    const ticket = ++facetsRequest;
+    let next = { clients: null, projects: null };
+    try {
+        const [byClient, byProject] = await Promise.all([
+            api.get('/stats', { ...base, group_by: 'client' }),
+            api.get('/stats', { ...base, ...(client_id ? { client_id } : {}), group_by: 'project' }),
+        ]);
+        const keys = (data) => new Set(data.groups.map((g) => String(g.key)));
+        next = { clients: keys(byClient), projects: keys(byProject) };
+    } catch {
+        // Ohne Antwort keine Einschränkung – beim nächsten Mal erneut versuchen.
+    }
+    if (ticket !== facetsRequest) return false;
+
+    const changed = { clients: !sameSet(facets.clients, next.clients), projects: !sameSet(facets.projects, next.projects) };
+    facets = next;
+    facets.changed = changed;
+    return true;
+}
+
+/**
+ * Auswahlfelder an die Facetten anpassen. Nur was sich geändert hat, wird neu
+ * gezeichnet – ein gerade geöffnetes Feld darf nicht unter der Hand ersetzt
+ * werden. Fällt dabei eine Auswahl weg, ändern sich die Einträge: neu laden.
+ */
+async function syncFacets(root) {
+    if (!(await loadFacets())) return;
+
+    const before = `${filters.client_id}|${filters.project_id}|${filters.subproject_id}`;
+    if (facets.changed.clients) fillFilters(root);
+    else if (facets.changed.projects) fillProjects(root);
+    if (before !== `${filters.client_id}|${filters.project_id}|${filters.subproject_id}`) refresh(root);
 }
 
 /** Jahre zu den aktuellen Filtern (ohne Zeitraum) laden und eintragen. */
@@ -713,7 +845,14 @@ async function refresh(root) {
     storeFilters();
     const rangeSelect = root.querySelector('[name=range]');
     if (rangeSelect) rangeSelect.value = range ?? '';
+    // Nach dem Bearbeiten ist der Baum verworfen (invalidateTree) – ohne ihn
+    // wären die Auswahlfelder leer, bis die Seite neu geladen wird.
+    if (!state.tree) {
+        await loadTree({ archived: filters.archived === '1' });
+        fillFilters(root);
+    }
     syncYears(root);
+    syncFacets(root);
     selectable = [];
     loaded.clear();
     lastTotals = null;
@@ -725,7 +864,8 @@ async function refresh(root) {
         if (mode === 'stats') return await refreshStats(host);
 
         const data = await api.get('/entries', {
-            ...filters,
+            ...queryFilters(),
+            trashed: filters.trashed,
             group: 'day',
             // Ein Monatsraster umfasst bis zu sechs Wochen; die Liste lädt
             // seitenweise nach (loadMore).
@@ -785,7 +925,8 @@ async function loadMore(root, all) {
                 ?.replaceChildren(t('entries.loadingMore', { shown: count(loaded.size), total: count(total) }));
 
             const data = await api.get('/entries', {
-                ...filters,
+                ...queryFilters(),
+                trashed: filters.trashed,
                 group: 'day',
                 limit: all ? 1000 : PAGE,
                 offset: loaded.size,
@@ -918,9 +1059,9 @@ async function refreshStats(host) {
         ${statsHtml(data, groupBy)}`;
 }
 
-/** Ankreuzen nur in der Liste und außerhalb des Papierkorbs. */
+/** Ankreuzen nur in der Liste; im Papierkorb für Wiederherstellen/endgültig Löschen. */
 function canSelect() {
-    return canEdit() && mode === 'list' && filters.trashed !== '1';
+    return canEdit() && mode === 'list';
 }
 
 /**
@@ -975,9 +1116,13 @@ function syncSelection(root) {
             ${amount !== undefined ? html`<strong class="batchbar__num">${money(amount)}</strong>` : ''}
         </span>
         <span class="batchbar__actions">
-            <button type="button" class="btn" data-batch="report">${t('output.report')}</button>
-            <button type="button" class="btn" data-batch="export">${t('output.export')}</button>
-            <button type="button" class="btn btn--primary" data-batch="edit">${t('batch.edit')}</button>
+            ${filters.trashed === '1' ? html`
+                <button type="button" class="btn" data-batch="restore">${icon('restore', 16)} ${t('common.restore')}</button>
+                <button type="button" class="btn btn--danger" data-batch="purge">${icon('trash', 16)} ${t('entries.purge')}</button>` : html`
+                <button type="button" class="btn" data-batch="report">${t('output.report')}</button>
+                <button type="button" class="btn" data-batch="export">${t('output.export')}</button>
+                <button type="button" class="btn" data-batch="trash">${icon('trash', 16)} ${t('batch.trash')}</button>
+                <button type="button" class="btn btn--primary" data-batch="edit">${t('batch.edit')}</button>`}
         </span>`;
 }
 
@@ -985,8 +1130,9 @@ function syncSelection(root) {
 
 /** Filter in der Form, die /stats, /report und /export erwarten. */
 function queryFilters() {
-    const { trashed, ...rest } = filters;
-    return rest;
+    const { trashed, archived, ...rest } = filters;
+    // Archivierte Kunden/Projekte gelten nur für Administratoren als Schalter.
+    return canEdit() ? { ...rest, archived: archived === '1' ? '1' : '0' } : rest;
 }
 
 /** Ausgabe über die aktuellen Filter (Knöpfe in der Filterleiste). */
@@ -1077,7 +1223,7 @@ function row(entry) {
     const open = canEdit() && !entry.deleted_at;
 
     return html`
-        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${check ? 'entry--check' : ''} ${open ? 'entry--open' : ''}"
+        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${entry.archived ? 'entry--archived' : ''} ${check ? 'entry--check' : ''} ${open ? 'entry--open' : ''}"
             ${open ? { __raw: `data-edit="${entry.id}" tabindex="0"` } : ''}>
             ${check ? html`
                 <label class="check entry__check" title="${t('batch.selectEntry')}">
@@ -1092,6 +1238,7 @@ function row(entry) {
                 <span class="entry__path">
                     ${entry.subproject_name}
                     <span class="muted"> · ${entry.client_name} · ${entry.project_name}</span>
+                    ${entry.archived ? html`<span class="row__tag">${t('master.archivedTag')}</span>` : ''}
                 </span>
                 ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
             </span>
@@ -1105,6 +1252,8 @@ function row(entry) {
                 <span class="entry__actions">
                     <button class="icon-btn" data-restore="${entry.id}"
                         title="${t('common.restore')}" aria-label="${t('common.restore')}">${icon('restore')}</button>
+                    <button class="icon-btn" data-purge="${entry.id}"
+                        title="${t('entries.purge')}" aria-label="${t('entries.purge')}">${icon('trash')}</button>
                 </span>` : ''}
         </li>`;
 }
@@ -1150,7 +1299,7 @@ async function batchEdit(root) {
             </label>
             <label class="field field--inline">
                 <span class="field__label">&nbsp;</span>
-                <input class="input" type="number" name="rate" step="0.01" min="0" disabled>
+                <input class="input" type="number" name="rate" step="0.01" min="0">
             </label>
         </div>
         <div class="filters__row">
@@ -1178,22 +1327,53 @@ async function batchEdit(root) {
     const rateMode = node.querySelector('[name=rate_mode]');
     const rate = node.querySelector('[name=rate]');
 
+    // Das Satzfeld zeigt in Grau, was gelten würde: bei "behalten" der Satz
+    // der Auswahl (oder "unterschiedlich"), bei "aus den Stammdaten" der dort
+    // hinterlegte. Eigene Eingabe (kräftig) schaltet auf "festen Satz".
+    const picked = ids.map((id) => loaded.get(id)).filter(Boolean);
+    const rateText = (values) => {
+        const set = new Set(values);
+        return set.size === 1 && !set.has(undefined) ? decimal([...set][0]) : `≠ ${t('batch.rateMixed')}`;
+    };
+    const showRateHint = () => {
+        if (rateMode.value === 'fixed') {
+            rate.placeholder = '';
+            return;
+        }
+        if (rateMode.value === 'keep') {
+            rate.placeholder = rateText(picked.map((entry) => entry.rate));
+            return;
+        }
+        const effective = new Map(flatSubprojects().map((s) => [s.id, s.effective_rate]));
+        rate.placeholder = rateText(picked.map((entry) => effective.get(subprojectId ?? entry.subproject_id)));
+    };
+
     pick.addEventListener('click', async () => {
-        const picked = await pickSubproject({ current: subprojectId });
-        if (!picked) return;
-        subprojectId = picked;
-        pick.textContent = flatSubprojects().find((s) => s.id === picked)?.path || t('common.dash');
+        const chosen = await pickSubproject({ current: subprojectId });
+        if (!chosen) return;
+        subprojectId = chosen;
+        pick.textContent = flatSubprojects().find((s) => s.id === chosen)?.path || t('common.dash');
         unpick.hidden = false;
+        showRateHint();
     });
     unpick.addEventListener('click', () => {
         subprojectId = null;
         pick.textContent = t('batch.keep');
         unpick.hidden = true;
+        showRateHint();
     });
     rateMode.addEventListener('change', () => {
-        rate.disabled = rateMode.value !== 'fixed';
-        if (!rate.disabled) rate.focus();
+        if (rateMode.value === 'fixed') rate.focus();
+        else rate.value = ''; // ein getippter Satz gilt nur mit "festen Satz setzen"
+        showRateHint();
     });
+    rate.addEventListener('input', () => {
+        // Eigener Satz -> "festen Satz setzen"; leeres Feld -> zurück.
+        if (rate.value !== '') rateMode.value = 'fixed';
+        else if (rateMode.value === 'fixed') rateMode.value = 'keep';
+        showRateHint();
+    });
+    showRateHint();
 
     // Was mit den abgerechneten Einträgen der Auswahl passiert, hängt am
     // gewählten Status – der Hinweis zieht mit.
@@ -1220,7 +1400,10 @@ async function batchEdit(root) {
             const payload = { ids };
             if (subprojectId) payload.subproject_id = subprojectId;
             if (rateMode.value !== 'keep') payload.rate_mode = rateMode.value;
-            if (rateMode.value === 'fixed') payload.rate = rate.value === '' ? null : Number(rate.value);
+            if (rateMode.value === 'fixed') {
+                if (rate.value === '') throw new Error(t('batch.rateEmpty'));
+                payload.rate = Number(rate.value);
+            }
             if (node.querySelector('[name=billable]').value !== '') {
                 payload.billable = node.querySelector('[name=billable]').value === '1';
             }
@@ -1242,6 +1425,36 @@ async function batchEdit(root) {
         toast(t('batch.skipped', { count: result.skipped.length }), 'info', 6000);
     }
     selected.clear();
+    invalidateTree();
+    await refresh(root);
+}
+
+/** Auswahl in den Papierkorb legen, zurückholen oder endgültig löschen. */
+async function batchRemove(root, action) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    const n = count(ids.length);
+
+    // In den Papierkorb und zurück lässt sich rückgängig machen – nur das
+    // endgültige Löschen fragt nach.
+    if (action === 'purge' && !await confirmDialog(
+        t('batch.purgeTitle', { count: n }), t('batch.purgeText', { count: n }), t('entries.purge'),
+    )) return;
+    if (action === 'trash' && ids.length > 1 && !await confirmDialog(
+        t('batch.trashTitle', { count: n }), t('batch.trashText'), t('batch.trash'),
+    )) return;
+
+    try {
+        const result = await api.post('/entries/batch/remove', { ids, action });
+        toast(t('batch.removed.' + action, { count: count(result.done.length) }), 'ok', 3000);
+        if (result.skipped.length) {
+            toast(t('batch.removeSkipped', { count: result.skipped.length }), 'info', 6000);
+        }
+    } catch (error) {
+        return toastError(error);
+    }
+    selected.clear();
+    anchorId = null;
     invalidateTree();
     await refresh(root);
 }

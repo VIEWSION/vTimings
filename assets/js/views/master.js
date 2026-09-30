@@ -7,7 +7,7 @@ import { LANGS, t } from '../i18n.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
 import { icon } from '../icons.js';
-import { decimal, esc, formatDate, html, money, todayISO } from '../util.js';
+import { count, decimal, esc, formatDate, html, money, todayISO } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
 
@@ -128,6 +128,25 @@ function statLine(node) {
     return html`<span class="muted">${stats.hhmm}${stats.amount ? ' · ' + money(stats.amount) : ''}</span>`;
 }
 
+/**
+ * Attribute für den Löschen-Knopf: mit Einträgen gesperrt (der Server lehnt
+ * es ohnehin ab), stattdessen archivieren.
+ */
+function deleteGuard(node, iconOnly = false) {
+    const n = node.stats?.entries ?? 0;
+    const tip = n
+        ? t('master.deleteBlocked', { count: count(n) })
+        : t('common.delete');
+    const attrs = `title="${esc(tip)}"` + (iconOnly ? ` aria-label="${esc(t('common.delete'))}"` : '');
+    return { __raw: attrs + (n ? ' disabled' : '') };
+}
+
+/** Kleines Zähl-Badge hinter dem Namen; ohne Einträge entfällt es. */
+function countBadge(node) {
+    const n = node.stats?.entries;
+    return n ? html`<span class="row__count" title="${t('common.entries')}">${count(n)}</span>` : '';
+}
+
 function drawClients(root, list) {
     root.querySelector('#col-clients').innerHTML = html`
         ${{ __raw: columnHead(t('master.clients'), null, t('master.addClient'), 'data-add-client') }}
@@ -142,6 +161,8 @@ function drawClients(root, list) {
                             ${{ __raw: statLine(client) }}
                             ${progressBar(client.budget)}
                         </span>
+                        ${countBadge(client)}
+                        ${client.archived ? html`<span class="row__tag">${t('master.archivedTag')}</span>` : ''}
                         <span class="row__meta">${client.effective_rate} €</span>
                     </button>
                 </li>`)}
@@ -166,7 +187,8 @@ function drawProjects(root) {
                title="${t('master.clientViewHint')}">${t('master.clientView')}</a>
             <button class="btn btn--ghost btn--small" data-add-budget="client"
                     title="${t('budget.addClientHint')}">${icon('plus', 14)} ${t('budget.package')}</button>
-            <button class="btn btn--ghost btn--small" data-delete-client="${client.id}">${t('common.delete')}</button>
+            <button class="btn btn--ghost btn--small" data-delete-client="${client.id}"
+                    ${deleteGuard(client)}>${t('common.delete')}</button>
         </div>
         ${budgetSection(client.budget)}
         <ul class="rows">
@@ -180,6 +202,8 @@ function drawProjects(root) {
                             ${{ __raw: statLine(project) }}
                             ${progressBar(project.budget)}
                         </span>
+                        ${countBadge(project)}
+                        ${project.archived ? html`<span class="row__tag">${t('master.archivedTag')}</span>` : ''}
                         <span class="row__meta">${project.effective_rate} €</span>
                     </button>
                 </li>`)}
@@ -202,7 +226,8 @@ function drawSubprojects(root) {
             <button class="btn btn--ghost btn--small" data-edit-project="${project.id}">${t('master.editProject')}</button>
             <button class="btn btn--ghost btn--small" data-add-budget="project"
                     title="${t('budget.addProjectHint')}">${icon('plus', 14)} ${t('budget.package')}</button>
-            <button class="btn btn--ghost btn--small" data-delete-project="${project.id}">${t('common.delete')}</button>
+            <button class="btn btn--ghost btn--small" data-delete-project="${project.id}"
+                    ${deleteGuard(project)}>${t('common.delete')}</button>
         </div>
         ${budgetSection(project.budget)}
         <ul class="rows">
@@ -213,10 +238,11 @@ function drawSubprojects(root) {
                             <strong>${sub.name}</strong>
                             ${{ __raw: statLine(sub) }}
                         </span>
+                        ${sub.archived ? html`<span class="row__tag">${t('master.archivedTag')}</span>` : ''}
                         <span class="row__meta">${sub.effective_rate} €</span>
                         <span class="row__actions">
                             <button class="icon-btn" data-edit-subproject="${sub.id}" title="${t('common.edit')}" aria-label="${t('common.edit')}">${icon('edit')}</button>
-                            <button class="icon-btn" data-delete-subproject="${sub.id}" title="${t('common.delete')}" aria-label="${t('common.delete')}">${icon('trash')}</button>
+                            <button class="icon-btn" data-delete-subproject="${sub.id}" ${deleteGuard(sub, true)}>${icon('trash')}</button>
                         </span>
                     </span>
                 </li>`)}

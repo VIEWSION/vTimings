@@ -42,8 +42,11 @@ final class ReportBuilder
 
         $showCosts = $options['costs'] && Scope::current()->showCosts;
 
-        $client = !empty($filters['client_id']) ? ClientRepo::find((int) $filters['client_id']) : null;
-        $project = !empty($filters['project_id']) ? ProjectRepo::find((int) $filters['project_id']) : null;
+        // Bei Mehrfachauswahl gibt es keinen einzelnen Kunden/ein einzelnes Projekt.
+        $pickedClients = array_values(array_filter((array) ($filters['client_id'] ?? [])));
+        $pickedProjects = array_values(array_filter((array) ($filters['project_id'] ?? [])));
+        $client = count($pickedClients) === 1 ? ClientRepo::find((int) $pickedClients[0]) : null;
+        $project = count($pickedProjects) === 1 ? ProjectRepo::find((int) $pickedProjects[0]) : null;
 
         // Ohne ausdrückliche Auswahl aus den Einträgen ableiten – ein Nachweis
         // über genau einen Kunden bekommt so trotzdem dessen Kopfdaten.

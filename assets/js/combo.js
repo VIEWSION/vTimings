@@ -132,11 +132,12 @@ function show(select, button, sync) {
     function draw() {
         list.innerHTML = visible.length
             ? visible.map((o, i) => `
-                <li class="combo__item ${o.selected ? 'is-selected' : ''} ${i === active ? 'is-active' : ''}"
+                <li class="combo__item ${o.selected ? 'is-selected' : ''} ${i === active ? 'is-active' : ''} ${o.dataset.archived ? 'is-archived' : ''}"
                     role="option" id="${listId}-${i}" data-index="${i}" aria-selected="${o.selected}">
                     ${select.multiple ? `<span class="combo__check" aria-hidden="true">${o.selected ? icon('check', 12) : ''}</span>` : ''}
                     ${dot(o.dataset.color || '')}
                     <span class="combo__text">${esc(o.textContent)}</span>
+                    ${o.dataset.archived ? `<span class="row__tag">${esc(t('master.archivedTag'))}</span>` : ''}
                 </li>`).join('')
             : `<li class="combo__empty">${esc(t('common.noMatch'))}</li>`;
 

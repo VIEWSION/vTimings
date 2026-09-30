@@ -123,12 +123,14 @@ final class ReportController
         return array_filter([
             'from'          => $q['from'] ?? null,
             'to'            => $q['to'] ?? null,
-            'client_id'     => isset($q['client_id']) ? (int) $q['client_id'] : null,
-            'project_id'    => isset($q['project_id']) ? (int) $q['project_id'] : null,
+            'client_id'     => self::idList($q['client_id'] ?? null, 'client_id'),
+            'project_id'    => self::idList($q['project_id'] ?? null, 'project_id'),
             'subproject_id' => isset($q['subproject_id']) ? (int) $q['subproject_id'] : null,
             'q'             => $q['q'] ?? null,
             'billed'        => isset($q['billed']) && $q['billed'] !== ''
                 ? in_array((string) $q['billed'], ['1', 'true'], true) : null,
+            'archived'      => isset($q['archived']) && $q['archived'] !== ''
+                ? in_array((string) $q['archived'], ['1', 'true'], true) : null,
             'billable'      => isset($q['billable']) && $q['billable'] !== ''
                 ? in_array((string) $q['billable'], ['1', 'true'], true) : null,
             'type'          => $q['type'] ?? null,
@@ -157,6 +159,19 @@ final class ReportController
             throw HttpException::badRequest('Höchstens 1000 Einträge auf einmal.');
         }
         return $ids;
+    }
+
+    /** `client_id=3` oder `client_id=3,5` -> Liste (null = kein Filter). */
+    private static function idList(mixed $raw, string $name): ?array
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (!is_string($raw) || !preg_match('/^\d+(,\d+)*$/', $raw)) {
+            throw HttpException::badRequest("Ungültige Angabe für $name.");
+        }
+        $ids = array_values(array_unique(array_map('intval', explode(',', $raw))));
+        return count($ids) > 200 ? throw HttpException::badRequest("Zu viele Werte für $name.") : $ids;
     }
 
     private static function flag(Request $req, string $name, bool $default): bool

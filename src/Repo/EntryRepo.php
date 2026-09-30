@@ -15,6 +15,7 @@ final class EntryRepo
         s.name AS subproject_name, s.project_id AS project_id,
         p.name AS project_name, p.color AS project_color, p.client_id AS client_id,
         c.name AS client_name, c.color AS client_color, c.currency AS currency,
+        p.archived AS project_archived, c.archived AS client_archived,
         i.number AS invoice_number,
         bu.note AS budget_note, bu.starts_at AS budget_starts_at';
 
@@ -28,8 +29,8 @@ final class EntryRepo
     /**
      * @param array{
      *   from?:string|null, to?:string|null,
-     *   client_id?:int|null, project_id?:int|null, subproject_id?:int|null,
-     *   q?:string, billed?:bool|null, type?:string|null, billable?:bool|null,
+     *   client_id?:int|list<int>|null, project_id?:int|list<int>|null, subproject_id?:int|null,
+     *   archived?:bool|null, q?:string, billed?:bool|null, type?:string|null, billable?:bool|null,
      *   ids?:list<int>, trashed?:bool, limit?:int, offset?:int, order?:string
      * } $opts
      * @return array{entries:list<array<string,mixed>>, total:int, totals:array<string,mixed>}
@@ -598,6 +599,53 @@ final class EntryRepo
         });
     }
 
+    /**
+     * Mehrere Einträge in den Papierkorb legen (`trash`), zurückholen
+     * (`restore`) oder endgültig entfernen (`purge`, nur aus dem Papierkorb).
+     * Was die Einzelaktion ablehnen würde – abgerechnete Einträge lassen sich
+     * nicht löschen –, wird übersprungen statt den Vorgang abzubrechen.
+     *
+     * @param list<int> $ids
+     * @return array{done:list<int>, skipped:list<array{id:int, reason:string}>}
+     */
+    public static function batchRemove(array $ids, string $action): array
+    {
+        return Database::transaction(static function () use ($ids, $action): array {
+            $done = [];
+            $skipped = [];
+
+            foreach (array_values(array_unique($ids)) as $id) {
+                $entry = self::find($id);
+                if ($entry === null) {
+                    $skipped[] = ['id' => $id, 'reason' => 'not_found'];
+                    continue;
+                }
+                $trashed = $entry['deleted_at'] !== null;
+
+                if ($action === 'trash') {
+                    if ($trashed) {
+                        $skipped[] = ['id' => $id, 'reason' => 'trashed'];
+                        continue;
+                    }
+                    if ($entry['billed']) {
+                        $skipped[] = ['id' => $id, 'reason' => 'billed'];
+                        continue;
+                    }
+                    self::delete($id);
+                } else {
+                    if (!$trashed) {
+                        $skipped[] = ['id' => $id, 'reason' => 'not_trashed'];
+                        continue;
+                    }
+                    $action === 'restore' ? self::restore($id) : self::purge($id);
+                }
+                $done[] = $id;
+            }
+
+            return ['done' => $done, 'skipped' => $skipped];
+        });
+    }
+
     /** Papierkorb statt hartem Löschen. */
     public static function delete(int $id): void
     {
@@ -711,13 +759,23 @@ final class EntryRepo
             }
             $where[] = 'e.id IN (' . implode(', ', $names) . ')';
         }
-        if (!empty($opts['client_id'])) {
-            $where[] = 'p.client_id = :client_id';
-            $params['client_id'] = (int) $opts['client_id'];
+        // Kunde und Projekt: eine ID oder eine Liste (Mehrfachauswahl im Filter).
+        foreach (['client_id' => 'p.client_id', 'project_id' => 's.project_id'] as $key => $column) {
+            $values = array_values(array_filter(array_map('intval', (array) ($opts[$key] ?? []))));
+            if ($values === []) {
+                continue;
+            }
+            $names = [];
+            foreach ($values as $i => $value) {
+                $names[] = ":{$key}{$i}";
+                $params["{$key}{$i}"] = $value;
+            }
+            $where[] = "$column IN (" . implode(', ', $names) . ')';
         }
-        if (!empty($opts['project_id'])) {
-            $where[] = 's.project_id = :project_id';
-            $params['project_id'] = (int) $opts['project_id'];
+        // archived=false: Einträge archivierter Kunden/Projekte ausblenden.
+        // Ohne Angabe (oder true) gilt kein Filter.
+        if (array_key_exists('archived', $opts) && $opts['archived'] === false) {
+            $where[] = 'p.archived = 0 AND c.archived = 0';
         }
         if (!empty($opts['subproject_id'])) {
             $where[] = 'e.subproject_id = :subproject_id';
@@ -807,6 +865,7 @@ final class EntryRepo
             'project_name'    => (string) $row['project_name'],
             'client_id'       => (int) $row['client_id'],
             'client_name'     => (string) $row['client_name'],
+            'archived'        => !empty($row['project_archived']) || !empty($row['client_archived']),
             'color'           => $row['project_color'] ?? $row['client_color'] ?? null,
             'path'            => sprintf('%s | %s | %s', $row['client_name'], $row['project_name'], $row['subproject_name']),
             'started_at'      => Clock::iso($start),

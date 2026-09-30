@@ -146,18 +146,31 @@ final class SubprojectRepo
      * Soft-Delete. Einträge blockieren das Löschen – sie hängen direkt daran
      * und würden sonst ihre Zuordnung verlieren.
      */
+    /** Meldung beim Löschversuch; sagt dazu, wenn die Einträge im Papierkorb liegen. */
+    public static function entriesMessage(string $what, int $total, int $trashed): string
+    {
+        $noun = $total === 1 ? 'Eintrag' : 'Einträge';
+        if ($trashed === $total) {
+            return "$what hat noch $total $noun im Papierkorb (Einträge > „Papierkorb“). "
+                . 'Erst dort endgültig löschen – oder archivieren.';
+        }
+        $hint = $trashed > 0 ? " ($trashed davon im Papierkorb)" : '';
+        return "$what hat noch $total $noun$hint. Bitte archivieren statt löschen.";
+    }
+
     public static function delete(int $id): void
     {
         self::findOrFail($id);
 
-        $entries = (int) Database::value(
-            'SELECT COUNT(*) FROM entries WHERE subproject_id = :id AND deleted_at IS NULL',
+        $counts = Database::one(
+            'SELECT COUNT(*) AS total, COALESCE(SUM(deleted_at IS NOT NULL), 0) AS trashed
+               FROM entries WHERE subproject_id = :id', // auch Papierkorb
             ['id' => $id]
         );
-        if ($entries > 0) {
+        if ((int) $counts['total'] > 0) {
             throw HttpException::conflict(
-                "Teilprojekt hat noch $entries Zeiteintrag/-einträge. Bitte archivieren statt löschen.",
-                ['entries' => $entries]
+                self::entriesMessage('Teilprojekt', (int) $counts['total'], (int) $counts['trashed']),
+                ['entries' => (int) $counts['total'], 'trashed' => (int) $counts['trashed']]
             );
         }
         if ((int) Database::value('SELECT COUNT(*) FROM timers WHERE subproject_id = :id', ['id' => $id]) > 0) {

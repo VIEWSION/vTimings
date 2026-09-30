@@ -12,6 +12,42 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.13.0] – 2026-09-30
+
+### Neu
+- Einträge: Kunde und Projekt lassen sich im Filter mehrfach auswählen. API:
+  `client_id` und `project_id` nehmen auch Listen (`1,2,3`).
+- Die Filter bedingen sich gegenseitig: Kunden- und Projektliste zeigen nur,
+  wozu es im gewählten Zeitraum (und bei Status, Suche …) Einträge gibt.
+  Was gerade gewählt ist, bleibt in der Liste stehen, auch ohne Einträge.
+- Schalter „Archivierte“ bei den Einträgen. Standardmäßig sind archivierte
+  Kunden und Projekte samt ihren Einträgen ausgeblendet (auch in Summen,
+  Leistungsnachweis und Export); eingeblendet sind sie abgedunkelt und mit
+  „Archiv“ gekennzeichnet. API: `archived=0|1`, ohne Angabe gilt kein Filter.
+- Stammdaten: archivierte Kunden, Projekte und Teilprojekte deutlicher
+  abgedunkelt und mit „Archiv“-Label; hinter Kunden und Projekten steht ein
+  Badge mit der Anzahl der Einträge.
+- Mehrfachauswahl auch im Papierkorb: „Wiederherstellen“ und „Endgültig
+  löschen“. In der normalen Liste gibt es „In den Papierkorb“ für die
+  Auswahl. Einzelne Einträge im Papierkorb lassen sich endgültig löschen.
+  API: `POST /api/entries/batch/remove`.
+- Gemeinsam bearbeiten: Das Satzfeld zeigt in Grau den Satz der Auswahl bzw.
+  den Stammdatensatz („≠ unterschiedlich“, wenn sie abweichen). Ein eigener
+  Satz schaltet automatisch auf „festen Satz setzen“.
+- Abgerechnete Einträge haben einen leicht grünen Hintergrund; die grüne
+  Linie bleibt beim Überfahren unverändert.
+
+### Geändert
+- Kunden, Projekte und Teilprojekte lassen sich nicht löschen, solange es
+  Einträge dafür gibt (auch im Papierkorb). Die Meldung nennt, ob sie im
+  Papierkorb liegen; der Löschen-Knopf ist dann gesperrt.
+
+### Behoben
+- Nach dem Bearbeiten oder Löschen von Einträgen waren die Auswahlfelder für
+  Kunde und Projekt leer, bis die Seite neu geladen wurde.
+- Ein gewählter Kunde sprang beim Umschalten des Status oder Zeitraums auf
+  „alle“ zurück, wenn es dazu keine Einträge gab.
+
 ## [1.12.0] – 2026-09-29
 
 ### Neu

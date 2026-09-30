@@ -197,7 +197,10 @@ POST   /api/budgets/bill               { client_id, project_id?, split = true, d
                                          aufgebrauchte Pakete abrechnen (s. u.)
 DELETE /api/budgets/{id}/bill          Abrechnung des zuletzt abgerechneten Pakets aufheben
 
-GET    /api/entries?from&to&client_id&project_id&q&billed&group=day
+GET    /api/entries?from&to&client_id&project_id&q&billed&archived&group=day
+                                       client_id/project_id auch als Liste (1,2,3);
+                                       archived=0 blendet Einträge archivierter
+                                       Kunden/Projekte aus (ohne Angabe: alle)
 POST   /api/entries
 PATCH  /api/entries/{id}               billed: true|false setzt den Status (s. u.)
 POST   /api/entries/batch              { ids, subproject_id?, rate_mode?: keep|inherit|fixed,
@@ -206,6 +209,8 @@ POST   /api/entries/batch              { ids, subproject_id?, rate_mode?: keep|i
                                          abgerechnete Einträge wieder (nicht mit Rechnung),
                                          sonst bleiben sie gesperrt und werden übersprungen
 DELETE /api/entries/{id}               Papierkorb
+POST   /api/entries/batch/remove       { ids, action: trash|restore|purge } – mehrere auf einmal;
+                                       abgerechnete werden nicht gelöscht, purge nur aus dem Papierkorb
 POST   /api/entries/{id}/restore
 GET    /api/entries/recent             Schnellwahl
 
@@ -221,7 +226,7 @@ GET    /api/export/formats
 GET    /report?template=&costs=&group_days=&times=&notes=&lang=
 
        stats, export und report nehmen dieselben Filter wie /api/entries
-       (from, to, client_id, project_id, subproject_id, q, billed) oder
+       (from, to, client_id, project_id, subproject_id, q, billed, archived) oder
        ids=12,15,19 für eine ausdrückliche Auswahl (höchstens 1000).
 
 GET    /api/portal                     Kundenportal

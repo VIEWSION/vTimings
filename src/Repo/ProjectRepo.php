@@ -152,6 +152,22 @@ final class ProjectRepo
     {
         self::findOrFail($id);
 
+        // Auch Einträge im Papierkorb zählen: beim Wiederherstellen hätten sie
+        // sonst kein Projekt mehr.
+        $counts = Database::one(
+            'SELECT COUNT(*) AS total, COALESCE(SUM(e.deleted_at IS NOT NULL), 0) AS trashed
+               FROM entries e
+               JOIN subprojects s ON s.id = e.subproject_id
+              WHERE s.project_id = :id',
+            ['id' => $id]
+        );
+        if ((int) $counts['total'] > 0) {
+            throw HttpException::conflict(
+                SubprojectRepo::entriesMessage('Projekt', (int) $counts['total'], (int) $counts['trashed']),
+                ['entries' => (int) $counts['total'], 'trashed' => (int) $counts['trashed']]
+            );
+        }
+
         $subprojects = (int) Database::value(
             'SELECT COUNT(*) FROM subprojects WHERE project_id = :id AND deleted_at IS NULL',
             ['id' => $id]

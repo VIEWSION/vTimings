@@ -494,6 +494,18 @@ pre {
    "ausgewählt" sie, ohne gegen die Spezifität der Kachel-Regel anzukämpfen.
    Ausgewählt schlägt abgerechnet (steht weiter unten). */
 .entry--billed { --entry-border: color-mix(in srgb, var(--ok) 60%, var(--border)); }
+.entry--billed { background: color-mix(in srgb, var(--ok) 5%, var(--surface)); }
+/* Abgerechnet bleibt beim Überfahren unverändert grün – nur der Hintergrund
+   wird eine Spur kräftiger. */
+.entry--billed:hover { background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+.entrylist--spaced .entry--billed.entry--open:not(.is-selected):hover {
+    --entry-border: color-mix(in srgb, var(--ok) 60%, var(--border));
+}
+
+.entry--archived .entry__main, .entry--archived .dot { opacity: 0.6; }
+.entry--archived .dot { filter: grayscale(1); }
+.entry__path .row__count { flex: none; min-width: 1.4rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); font-size: 0.72rem; line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums; }
+.row__tag { margin-left: 0.4rem; vertical-align: 0.1em; }
 
 .entry .dot { grid-area: dot; margin-top: 0.4rem; }
 .entry__times {
@@ -1204,7 +1216,7 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 }
 .btn:hover:not(:disabled) { background: var(--surface-2); border-color: color-mix(in srgb, var(--text-muted) 55%, var(--border-strong)); }
 .btn:active:not(:disabled) { transform: scale(0.98); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled, .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); box-shadow: 0 1px 2px rgb(0 0 0 / 10%), 0 2px 8px color-mix(in srgb, var(--accent) 25%, transparent); }
 .btn--primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
@@ -1287,7 +1299,12 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
 .rows li:last-child .row { border-bottom: 0; }
 .row:hover:not(.row--static) { background: var(--surface-2); }
 .row.is-active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.row.is-archived { opacity: 0.55; }
+.row.is-archived { opacity: 0.4; background: var(--surface-2); }
+.row.is-archived .dot { filter: grayscale(1); }
+.row.is-archived strong { font-weight: 500; }
+.combo__item.is-archived .combo__text, .combo__item.is-archived .dot { opacity: 0.5; }
+.combo__item.is-archived .dot { filter: grayscale(1); }
+.row__tag { flex: none; font-size: 0.68rem; line-height: 1; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .row__main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .row__main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row__main .muted { font-size: 0.8rem; font-variant-numeric: tabular-nums; }

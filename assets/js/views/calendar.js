@@ -324,6 +324,12 @@ export function budgetName(entry) {
  * gleich. Der Kalender zeigt nur das Häkchen, dort ist der Platz knapp.
  */
 export function billedMark(entry, { open = false } = {}) {
+    // Offen, aber durch ein Stundenpaket gedeckt (nur für Administratoren).
+    if (!entry.billed && entry.cover) {
+        const label = t(entry.cover === 'partial' ? 'entries.coverPartial' : 'entries.covered');
+        return html`<span class="billed-mark billed-mark--cover billed-mark--${entry.cover}" role="img"
+                title="${label}" aria-label="${label}"></span>`;
+    }
     if (!entry.billed) {
         return open ? html`<span class="billed-mark billed-mark--open" role="img"
                 title="${t('entries.statusOpen')}" aria-label="${t('entries.statusOpen')}"></span>` : '';

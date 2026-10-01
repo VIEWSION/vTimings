@@ -12,6 +12,47 @@ der Oberfläche, in `GET /api/health` und in `php bin/console.php status`.
 Die Versionen bis 1.5.0 wurden nachträglich aus der Git-Historie
 zusammengestellt.
 
+## [1.14.0] – 2026-10-01
+
+### Neu
+- Einträge: Die Summenzeile zeigt zusätzlich die noch offenen (nicht
+  abgerechneten) Stunden und Kosten – sobald sich darunter abgerechnete
+  Einträge befinden. API: `totals.open_minutes`, `open_hhmm`, `open_decimal`,
+  `open_amount`.
+- Einträge: Ist genau ein Kunde gewählt (oder sieht ein Kundenzugang nur
+  den eigenen), zeigt die Summenzeile darunter den Stand seiner
+  Stundenkontingente – je Kontingent eine Zeile mit Balken, Verbrauch und
+  Guthaben bzw. Überziehung. Mit Projektauswahl zählt je Projekt das eigene
+  Kontingent, sonst das des Kunden. Der Stand gilt insgesamt, nicht nur für
+  den Zeitraum-Filter.
+- Einträge: Neben „offen“ steht in Summenzeile und Summen-Ansicht, wie viele
+  offene Stunden **nicht durch ein Stundenpaket gedeckt** sind (Überziehung
+  und Kunden ohne Kontingent). Die Summen-Ansicht bekommt dafür die Spalten
+  „Offen“ und „Nicht gedeckt“; der Status-Filter „offen, nicht gedeckt“
+  zeigt genau diese Einträge. Nur für Administratoren. API: Filter
+  `uncovered=1`, `uncovered_minutes`/`uncovered_hhmm`/`uncovered_decimal` an
+  `totals` und an den Gruppen von `/api/stats`, dort auch `open_*`.
+- Einträge (Liste und Kalender): Offene Einträge, die ein Stundenpaket
+  deckt, sind mit einem blauen Ring markiert und in der Liste leicht blau
+  hinterlegt; über die Paketgrenze hinaus nur halb gefüllt. API: `cover`
+  (`covered`/`partial`/`null`) am Eintrag, nur für Administratoren.
+- Interne Notiz an Einträgen: nur für Administratoren sichtbar und nie im
+  Kundenportal, Leistungsnachweis oder Export (auch nicht im JSON-Export). Sie
+  lässt sich auch an abgerechneten Einträgen ändern, wird in der Suche
+  gefunden und im Sammelbearbeiten gesetzt (ersetzen, anhängen, entfernen).
+  Migration 0006; API: `internal_note` an Eintrag und Sammelbearbeitung
+  (`internal_note_mode`: `replace`/`append`).
+- Formular-Dialoge (Bearbeiten, Sammelbearbeiten, Kontingent …) schließen
+  nicht mehr durch einen Klick auf den Hintergrund, sondern über ✕ (oder Esc).
+- Filterfelder (Kunde, Projekt, Teilprojekt, Suche, Status, Datum) haben ein
+  ✕ zum Leeren hinter dem Label; ein gesetzter Filter macht Label und Rahmen
+  kräftiger.
+- Auswahlfelder mit Mehrfachauswahl: Ein Klick auf den Namen wählt nur diesen
+  Eintrag, mehrere gehen über die Kästchen. Lange Listen öffnen an der
+  aktuellen Auswahl.
+- Optionale Datumsfelder (Zeitraum, „läuft ab am“) zeigen leer `––.––.––––`
+  statt eines Beispieldatums und haben einen Knopf zum Leeren.
+
 ## [1.13.0] – 2026-09-30
 
 ### Neu

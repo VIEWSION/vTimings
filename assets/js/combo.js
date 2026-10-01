@@ -45,6 +45,7 @@ function combo(select) {
 
     const sync = () => {
         button.disabled = select.disabled;
+        select._clearSync?.(); // Knopf „leeren“ (clearable.js)
         button.classList.toggle('is-invalid', select.classList.contains('is-invalid'));
 
         const chosen = [...select.selectedOptions];
@@ -147,21 +148,26 @@ function show(select, button, sync) {
         }
     }
 
-    function choose(index) {
+    // `toggle`: nur das Kästchen einer Mehrfachauswahl schaltet einzeln um.
+    // Ein Klick auf den Namen wählt genau diesen Eintrag (und schließt die
+    // Liste) – wie bei einem normalen Auswahlfeld.
+    function choose(index, toggle = false) {
         const option = visible[index];
         if (!option) return;
 
-        if (select.multiple) {
+        if (select.multiple && toggle) {
             option.selected = !option.selected;
             active = index;
             draw();
+        } else if (select.multiple) {
+            for (const o of options) o.selected = o === option;
         } else {
             select.value = option.value;
         }
         select.dispatchEvent(new Event('change', { bubbles: true }));
         sync();
 
-        if (!select.multiple) {
+        if (!(select.multiple && toggle)) {
             close();
             button.focus();
         }
@@ -219,7 +225,7 @@ function show(select, button, sync) {
     list.addEventListener('mousedown', (event) => event.preventDefault()); // Fokus bleibt in der Suche
     list.addEventListener('click', (event) => {
         const item = event.target.closest('[data-index]');
-        if (item) choose(Number(item.dataset.index));
+        if (item) choose(Number(item.dataset.index), Boolean(event.target.closest('.combo__check')));
     });
     // Beim Tippen steht der erste Treffer bereit – Enter übernimmt ihn.
     search?.addEventListener('input', () => {
@@ -250,6 +256,10 @@ function show(select, button, sync) {
     active = select.multiple ? -1 : visible.indexOf(select.selectedOptions[0]);
     draw();
     place();
+
+    // Lange Listen öffnen an der aktuellen Auswahl, nicht ganz oben.
+    const current = list.querySelector('.is-selected');
+    if (current) list.scrollTop = current.offsetTop - (list.clientHeight - current.offsetHeight) / 2;
 
     if (search) search.focus();
     else {

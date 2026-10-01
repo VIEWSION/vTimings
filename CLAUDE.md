@@ -66,6 +66,19 @@ steht im README-Abschnitt „Sprache“.
 (FormData, `.value`, `change`); neu befüllte Optionen und `disabled` zieht
 der Aufsatz selbst nach. Keine eigene Dropdown-Logik in Views.
 
+**Interne Notiz** (`entries.internal_note`) ist nur für Administratoren:
+`EntryRepo::hydrate()` gibt sie nur bei `Scope::isUnrestricted()` heraus –
+das ist die einzige Stelle, an der Einträge für API und Kundenportal
+entstehen. Neue Ausgaben (Export, Nachweis) nehmen das Feld nicht auf; der
+JSON-Export entfernt es ausdrücklich. Sie bleibt auch an abgerechneten
+Einträgen änderbar (`EntryRepo::update()`/`batchUpdate()` behandeln sie vor
+den Sperren).
+
+**Leeren-Knopf an Filtern:** `data-clearable` am Feld (Datum, Text, Auswahl)
+plus `enhanceDates()`/`enhanceClearables()`; das Feld muss in einem
+`.field`-Label mit `.field__label` stehen. Gesetzte Felder bekommen
+`.is-filled` (Label und Rahmen kräftiger).
+
 **Abstände:** Ein Container, in den mehrere `.card` gerendert werden (z. B.
 `#results` in `entries.js`), bekommt die Klasse `stack` – sonst liegen die
 Karten ohne Abstand aneinander. Keine Einzel-Margins an Karten.

@@ -7,6 +7,7 @@ import { LANGS, t } from '../i18n.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, saveDialog, toast, toastError } from '../ui.js';
 import { icon } from '../icons.js';
+import { enhanceDates } from '../dates.js';
 import { count, decimal, esc, formatDate, html, money, todayISO } from '../util.js';
 
 const sel = { clientId: null, projectId: null, archived: false, q: '' };
@@ -462,6 +463,7 @@ async function editClient(root, id) {
         <label class="switch"><input type="checkbox" name="archived" ${client?.archived ? 'checked' : ''}>
             <span>${t('common.archivedLabel')}</span></label>`;
 
+    enhanceDates(node);
     const get = (n) => node.querySelector(`[name=${n}]`);
 
     await form(root, {
@@ -599,7 +601,7 @@ async function editBudget(root, id, level = 'project') {
             <label class="field field--inline"><span class="field__label">${t('budget.startsOn')}</span>
                 <input class="input" type="date" name="starts_on" value="${pkg?.starts_on ?? todayISO()}" required ${{ __raw: lock }}></label>
             <label class="field field--inline"><span class="field__label">${t('budget.expiresOn')}</span>
-                <input class="input" type="date" name="expires_on" value="${pkg?.expires_on ?? ''}" ${{ __raw: lock }}></label>
+                <input class="input" type="date" data-clearable name="expires_on" value="${pkg?.expires_on ?? ''}" ${{ __raw: lock }}></label>
         </div>
         <p class="field__hint">${t('budget.formHint')}</p>
         <label class="field"><span class="field__label">${t('common.note')}</span>

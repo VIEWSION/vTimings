@@ -34,6 +34,8 @@ export function statsHtml(data, groupBy) {
     }
 
     const max = Math.max(...data.groups.map((g) => g.minutes)) || 1;
+    // „Nicht gedeckt“ kennt der Server nur für Administratoren.
+    const cover = data.groups.some((g) => g.uncovered_minutes !== undefined);
 
     return html`
         <section class="card">
@@ -44,6 +46,8 @@ export function statsHtml(data, groupBy) {
                         <th class="num">${t('common.duration')}</th>
                         <th class="num">${t('common.hoursHead')}</th>
                         <th class="num">${t('common.amount')}</th>
+                        <th class="num">${t('common.billedOpen')}</th>
+                        ${cover ? html`<th class="num" title="${t('entries.uncoveredHint')}">${t('entries.uncoveredHead')}</th>` : ''}
                         <th class="num">${t('common.entriesHead')}</th>
                     </tr>
                 </thead>
@@ -58,6 +62,9 @@ export function statsHtml(data, groupBy) {
                             <td class="num">${group.hhmm}</td>
                             <td class="num">${decimal(group.decimal)}</td>
                             <td class="num">${group.amount !== undefined ? money(group.amount) : ''}</td>
+                            <td class="num">${group.open_minutes ? group.open_hhmm : html`<span class="muted">–</span>`}</td>
+                            ${cover ? html`<td class="num ${group.uncovered_minutes ? 'num--warn' : ''}">${
+                                group.uncovered_minutes ? group.uncovered_hhmm : html`<span class="muted">–</span>`}</td>` : ''}
                             <td class="num muted">${group.entries}</td>
                         </tr>`)}
                 </tbody>

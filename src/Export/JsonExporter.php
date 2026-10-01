@@ -32,7 +32,11 @@ final class JsonExporter implements Exporter
             'generated_at' => $context['generated_at'] ?? null,
             'filters'      => $context['filters'] ?? [],
             'totals'       => $context['totals'] ?? [],
-            'entries'      => $entries,
+            // Interne Notizen gehören nicht in eine Datei, die weitergegeben wird.
+            'entries'      => array_map(static function (array $entry): array {
+                unset($entry['internal_note']);
+                return $entry;
+            }, $entries),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION);
     }
 }

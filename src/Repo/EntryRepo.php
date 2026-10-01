@@ -11,6 +11,10 @@ use VT\Support\Clock;
 
 final class EntryRepo
 {
+    /** Dauer, solange der Eintrag noch nicht abgerechnet ist. */
+    private const OPEN_MIN = 'CASE WHEN e.billed_at IS NULL THEN e.duration_min ELSE 0 END';
+    private const OPEN_AMOUNT = 'CASE WHEN e.billed_at IS NULL THEN COALESCE(e.amount, 0) ELSE 0 END';
+
     private const SELECT = 'e.*,
         s.name AS subproject_name, s.project_id AS project_id,
         p.name AS project_name, p.color AS project_color, p.client_id AS client_id,
@@ -26,11 +30,34 @@ final class EntryRepo
         LEFT JOIN invoices i ON i.id = e.invoice_id
         LEFT JOIN budgets bu ON bu.id = e.budget_id';
 
+    /** Deckung durch Stundenpakete gibt es nur für Administratoren (alle Kontingente sichtbar). */
+    private static function coverEnabled(): bool
+    {
+        return Scope::current()->isUnrestricted();
+    }
+
+    /**
+     * SQL: Minuten eines Eintrags, die weder abgerechnet noch durch ein Paket
+     * gedeckt sind. Nur abrechenbare Zeiteinträge zählen. Ohne Zeile in
+     * `entry_cover` gehört der Eintrag zu keinem Paket: volle Dauer.
+     */
+    private static function uncoveredSql(): string
+    {
+        if (!self::coverEnabled()) {
+            return '0';
+        }
+        BudgetRepo::prepareCover();
+
+        return "CASE WHEN e.billed_at IS NULL AND e.billable = 1 AND e.type = 'time'
+                     THEN COALESCE((SELECT uc.uncovered_min FROM temp.entry_cover uc WHERE uc.entry_id = e.id), e.duration_min)
+                     ELSE 0 END";
+    }
+
     /**
      * @param array{
      *   from?:string|null, to?:string|null,
      *   client_id?:int|list<int>|null, project_id?:int|list<int>|null, subproject_id?:int|null,
-     *   archived?:bool|null, q?:string, billed?:bool|null, type?:string|null, billable?:bool|null,
+     *   archived?:bool|null, q?:string, billed?:bool|null, uncovered?:bool, type?:string|null, billable?:bool|null,
      *   ids?:list<int>, trashed?:bool, limit?:int, offset?:int, order?:string
      * } $opts
      * @return array{entries:list<array<string,mixed>>, total:int, totals:array<string,mixed>}
@@ -51,10 +78,13 @@ final class EntryRepo
         );
 
         $summary = Database::one(
-            'SELECT COUNT(*) AS n, COALESCE(SUM(e.duration_min), 0) AS m, COALESCE(SUM(e.amount), 0) AS a ' .
+            'SELECT COUNT(*) AS n, COALESCE(SUM(e.duration_min), 0) AS m, COALESCE(SUM(e.amount), 0) AS a, ' .
+            'COALESCE(SUM(' . self::OPEN_MIN . '), 0) AS om, ' .
+            'COALESCE(SUM(' . self::OPEN_AMOUNT . '), 0) AS oa, ' .
+            'COALESCE(SUM(' . self::uncoveredSql() . '), 0) AS um ' .
             self::JOIN . " WHERE $sql",
             $params
-        ) ?? ['n' => 0, 'm' => 0, 'a' => 0];
+        ) ?? ['n' => 0, 'm' => 0, 'a' => 0, 'om' => 0, 'oa' => 0, 'um' => 0];
 
         $minutes = (int) $summary['m'];
         $totals = [
@@ -62,16 +92,58 @@ final class EntryRepo
             'hhmm'    => Clock::hhmm($minutes),
             'decimal' => Clock::decimal($minutes),
             'entries' => (int) $summary['n'],
+            'open_minutes' => (int) $summary['om'],
+            'open_hhmm'    => Clock::hhmm((int) $summary['om']),
+            'open_decimal' => Clock::decimal((int) $summary['om']),
         ];
+        if (self::coverEnabled()) {
+            $totals['uncovered_minutes'] = (int) $summary['um'];
+            $totals['uncovered_hhmm']    = Clock::hhmm((int) $summary['um']);
+            $totals['uncovered_decimal'] = Clock::decimal((int) $summary['um']);
+        }
         if (Scope::current()->showCosts) {
             $totals['amount'] = round((float) $summary['a'], 2);
+            $totals['open_amount'] = round((float) $summary['oa'], 2);
+        }
+
+        $entries = array_map([self::class, 'hydrate'], $rows);
+        if (self::coverEnabled() && $entries !== []) {
+            self::markCover($entries);
         }
 
         return [
-            'entries' => array_map([self::class, 'hydrate'], $rows),
+            'entries' => $entries,
             'total'   => (int) $summary['n'],
             'totals'  => $totals,
         ];
+    }
+
+    /**
+     * Setzt `cover` an offenen, abrechenbaren Zeiteinträgen, die in einem
+     * Stundenpaket verrechnet werden: 'covered' = ganz gedeckt, 'partial' =
+     * nur zum Teil (der Rest ist Überziehung). Sonst null.
+     *
+     * @param list<array<string,mixed>> $entries
+     */
+    private static function markCover(array &$entries): void
+    {
+        BudgetRepo::prepareCover();
+        $ids = array_map(static fn(array $e) => (int) $e['id'], $entries);
+        $rows = Database::all(
+            'SELECT entry_id, uncovered_min FROM temp.entry_cover WHERE entry_id IN (' . implode(',', $ids) . ')'
+        );
+        $uncovered = array_column($rows, 'uncovered_min', 'entry_id');
+
+        foreach ($entries as &$entry) {
+            $entry['cover'] = null;
+            if ($entry['billed'] || !$entry['billable'] || $entry['type'] !== 'time' || !isset($uncovered[$entry['id']])) {
+                continue;
+            }
+            $over = (int) $uncovered[$entry['id']];
+            // Ganz in der Überziehung: von keinem Paket gedeckt, also kein Marker.
+            $entry['cover'] = $over === 0 ? 'covered' : ($over < $entry['duration_min'] ? 'partial' : null);
+        }
+        unset($entry);
     }
 
     /**
@@ -159,6 +231,9 @@ final class EntryRepo
                     COUNT(*) AS entries,
                     COALESCE(SUM(e.duration_min), 0) AS minutes,
                     COALESCE(SUM(e.amount), 0) AS amount,
+                    COALESCE(SUM(" . self::OPEN_MIN . "), 0) AS open_min,
+                    COALESCE(SUM(" . self::OPEN_AMOUNT . "), 0) AS open_amount,
+                    COALESCE(SUM(" . self::uncoveredSql() . "), 0) AS unc_min,
                     MIN(e.started_at) AS first_at,
                     MAX(e.started_at) AS last_at
                FROM entries e
@@ -181,6 +256,11 @@ final class EntryRepo
             (float) $row['amount'],
             (int) $row['first_at'],
             (int) $row['last_at'],
+            [
+                'open'        => (int) $row['open_min'],
+                'open_amount' => (float) $row['open_amount'],
+                'uncovered'   => (int) $row['unc_min'],
+            ],
         ), $rows);
     }
 
@@ -197,7 +277,9 @@ final class EntryRepo
         [$where, $params] = self::buildWhere($opts);
 
         $rows = Database::all(
-            'SELECT e.started_at, e.duration_min, e.amount
+            'SELECT e.started_at, e.duration_min, e.amount,
+                    ' . self::OPEN_MIN . ' AS open_min, ' . self::OPEN_AMOUNT . ' AS open_amount,
+                    ' . self::uncoveredSql() . ' AS unc_min
                FROM entries e
                JOIN subprojects s ON s.id = e.subproject_id
                JOIN projects    p ON p.id = s.project_id
@@ -221,8 +303,12 @@ final class EntryRepo
 
             $group = $groups[$key] ?? [
                 'entries' => 0, 'minutes' => 0, 'amount' => 0.0,
+                'open' => 0, 'open_amount' => 0.0, 'uncovered' => 0,
                 'first' => $start, 'last' => $start,
             ];
+            $group['open'] += (int) $row['open_min'];
+            $group['open_amount'] += (float) $row['open_amount'];
+            $group['uncovered'] += (int) $row['unc_min'];
             $group['entries']++;
             $group['minutes'] += (int) $row['duration_min'];
             $group['amount']  += (float) $row['amount'];
@@ -244,6 +330,7 @@ final class EntryRepo
                 $group['amount'],
                 $group['first'],
                 $group['last'],
+                ['open' => $group['open'], 'open_amount' => $group['open_amount'], 'uncovered' => $group['uncovered']],
             );
         }
         return $out;
@@ -274,6 +361,7 @@ final class EntryRepo
         float $amount,
         int $firstAt,
         int $lastAt,
+        array $cover = [],
     ): array {
         $out = [
             'key'      => $key,
@@ -286,8 +374,19 @@ final class EntryRepo
             'first_at' => Clock::iso($firstAt),
             'last_at'  => Clock::iso($lastAt),
         ];
+        $open = (int) ($cover['open'] ?? 0);
+        $out['open_minutes'] = $open;
+        $out['open_hhmm'] = Clock::hhmm($open);
+        $out['open_decimal'] = Clock::decimal($open);
+        if (self::coverEnabled()) {
+            $uncovered = (int) ($cover['uncovered'] ?? 0);
+            $out['uncovered_minutes'] = $uncovered;
+            $out['uncovered_hhmm'] = Clock::hhmm($uncovered);
+            $out['uncovered_decimal'] = Clock::decimal($uncovered);
+        }
         if (Scope::current()->showCosts) {
             $out['amount'] = round($amount, 2);
+            $out['open_amount'] = round((float) ($cover['open_amount'] ?? 0), 2);
         }
         return $out;
     }
@@ -339,6 +438,7 @@ final class EntryRepo
             'ended_at'      => $end,
             'duration_min'  => $minutes,
             'note'          => $data['note'] ?? '',
+            'internal_note' => (string) ($data['internal_note'] ?? ''),
             'rate'          => $rate,
             'amount'        => Rates::amount($minutes, (float) $rate),
             'type'          => $data['type'] ?? 'time',
@@ -365,6 +465,27 @@ final class EntryRepo
      * @param array<string,mixed> $data
      */
     public static function update(int $id, array $data): array
+    {
+        // Die interne Notiz bleibt immer änderbar – auch an abgerechneten
+        // Einträgen (gerade dort steht gern „verrechnet mit …“).
+        if (array_key_exists('internal_note', $data)) {
+            $internal = (string) $data['internal_note'];
+            unset($data['internal_note']);
+
+            return Database::transaction(static function () use ($id, $data, $internal): array {
+                self::findOrFail($id);
+                if ($data !== []) {
+                    self::updateFields($id, $data);
+                }
+                Database::update('entries', $id, ['internal_note' => $internal, 'updated_at' => Clock::now()]);
+                return self::findOrFail($id);
+            });
+        }
+
+        return self::updateFields($id, $data);
+    }
+
+    private static function updateFields(int $id, array $data): array
     {
         $entry = self::findOrFail($id);
 
@@ -463,6 +584,7 @@ final class EntryRepo
                 $ids[] = Database::insert('entries', $fields + [
                     'subproject_id' => $row['subproject_id'],
                     'note'          => $row['note'],
+                    'internal_note' => $row['internal_note'] ?? '',
                     'rate'          => $row['rate'],
                     'type'          => $row['type'],
                     'billable'      => $row['billable'],
@@ -543,7 +665,9 @@ final class EntryRepo
      * Vorgang abzubrechen.
      *
      * @param list<int> $ids
-     * @param array{subproject_id?:int, rate?:float|null, billable?:bool} $data
+     * @param array{subproject_id?:int, rate?:float|null, billable?:bool, internal_note?:string, internal_note_mode?:string} $data
+     *        `internal_note` gilt auch für abgerechnete Einträge; `internal_note_mode`:
+     *        replace (Standard) oder append (an vorhandene anhängen).
      * @param bool|null $billed true = abrechnen, false = wieder öffnen, null = unverändert
      * @return array{updated:list<int>, unchanged:list<int>, skipped:list<array{id:int, reason:string}>}
      */
@@ -555,7 +679,14 @@ final class EntryRepo
             SubprojectRepo::findOrFail((int) $data['subproject_id']);
         }
 
-        return Database::transaction(static function () use ($ids, $data, $billed): array {
+        // Die interne Notiz ist von den Sperren abgerechneter Einträge
+        // ausgenommen und läuft deshalb getrennt vom Rest.
+        $note = array_key_exists('internal_note', $data) ? (string) $data['internal_note'] : null;
+        $append = ($data['internal_note_mode'] ?? 'replace') === 'append';
+        unset($data['internal_note'], $data['internal_note_mode']);
+        $main = $data !== [] || $billed !== null;
+
+        return Database::transaction(static function () use ($ids, $data, $billed, $note, $append, $main): array {
             $updated = [];
             $unchanged = [];
             $skipped = [];
@@ -568,6 +699,16 @@ final class EntryRepo
                 }
                 if ($entry['deleted_at'] !== null) {
                     $skipped[] = ['id' => $id, 'reason' => 'trashed'];
+                    continue;
+                }
+
+                if (!$main) {
+                    // Nur die interne Notiz.
+                    if (self::applyInternalNote($id, (string) $entry['internal_note'], (string) $note, $append)) {
+                        $updated[] = $id;
+                    } else {
+                        $unchanged[] = $id;
+                    }
                     continue;
                 }
 
@@ -587,16 +728,35 @@ final class EntryRepo
                     continue;
                 }
                 if ($data === [] && $billed === $entry['billed']) {
-                    $unchanged[] = $id; // Status stimmte schon
+                    // Status stimmte schon – nur die Notiz kann noch etwas ändern.
+                    if ($note !== null && self::applyInternalNote($id, (string) $entry['internal_note'], $note, $append)) {
+                        $updated[] = $id;
+                    } else {
+                        $unchanged[] = $id;
+                    }
                     continue;
                 }
 
                 self::update($id, $billed === null ? $data : $data + ['billed' => $billed]);
+                if ($note !== null) {
+                    self::applyInternalNote($id, (string) (self::find($id)['internal_note'] ?? ''), $note, $append);
+                }
                 $updated[] = $id;
             }
 
             return ['updated' => $updated, 'unchanged' => $unchanged, 'skipped' => $skipped];
         });
+    }
+
+    /** Setzt oder hängt die interne Notiz an; true, wenn sich etwas geändert hat. */
+    private static function applyInternalNote(int $id, string $current, string $note, bool $append): bool
+    {
+        $new = $append && $note !== '' && trim($current) !== '' ? rtrim($current) . "\n" . $note : $note;
+        if ($new === $current) {
+            return false;
+        }
+        Database::update('entries', $id, ['internal_note' => $new, 'updated_at' => Clock::now()]);
+        return true;
     }
 
     /**
@@ -784,6 +944,10 @@ final class EntryRepo
         if (array_key_exists('billed', $opts) && $opts['billed'] !== null) {
             $where[] = $opts['billed'] ? 'e.billed_at IS NOT NULL' : 'e.billed_at IS NULL';
         }
+        // uncovered=true: offen, abrechenbar und von keinem Stundenpaket gedeckt.
+        if (!empty($opts['uncovered']) && self::coverEnabled()) {
+            $where[] = '(' . self::uncoveredSql() . ') > 0';
+        }
         if (array_key_exists('billable', $opts) && $opts['billable'] !== null) {
             $where[] = 'e.billable = :billable';
             $params['billable'] = $opts['billable'] ? 1 : 0;
@@ -795,7 +959,8 @@ final class EntryRepo
         if (!empty($opts['q'])) {
             // FTS5 für die Notizen, LIKE zusätzlich für Stammdatennamen.
             $where[] = '(e.id IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH :fts)
-                         OR c.name LIKE :like OR p.name LIKE :like OR s.name LIKE :like)';
+                         OR c.name LIKE :like OR p.name LIKE :like OR s.name LIKE :like'
+                . (self::coverEnabled() ? ' OR e.internal_note LIKE :like' : '') . ')';
             $params['fts'] = self::ftsQuery((string) $opts['q']);
             $params['like'] = '%' . $opts['q'] . '%';
         }
@@ -892,6 +1057,13 @@ final class EntryRepo
             'created_at'      => Clock::iso((int) $row['created_at']),
             'updated_at'      => Clock::iso((int) $row['updated_at']),
         ];
+
+        // Die interne Notiz verlässt hier nur für Administratoren das Haus –
+        // hydrate() ist die einzige Stelle, an der Einträge für die API
+        // (auch Kundenportal) entstehen.
+        if (Scope::current()->isUnrestricted()) {
+            $out['internal_note'] = (string) ($row['internal_note'] ?? '');
+        }
 
         // Kundenzugänge ohne Kostenrecht sehen weder Satz noch Betrag.
         if ($showCosts) {

@@ -49,12 +49,13 @@ export function toastError(error) {
  * Modaler Dialog. `render` liefert das Innere, `buttons` die Aktionen.
  * Auflösung mit dem Wert des geklickten Buttons (null bei Abbruch).
  *
- * Abbrechen ist immer das ✕ im Kopf (bzw. Esc oder Klick daneben) – einen
- * eigenen Abbrechen-Button gibt es nicht. Ein Button mit `icon` zeigt nur das
+ * Abbrechen ist immer das ✕ im Kopf (bzw. Esc oder Klick daneben, Letzteres
+ * mit `backdropClose: false` abgeschaltet) – einen eigenen Abbrechen-Button
+ * gibt es nicht. Ein Button mit `icon` zeigt nur das
  * Symbol, `label` wird dann Tooltip und Screenreader-Text. `align: 'start'`
  * stellt ihn an den linken Rand (z. B. Löschen).
  */
-export function dialog({ title, body, buttons = [], onMount }) {
+export function dialog({ title, body, buttons = [], onMount, backdropClose = true }) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'overlay';
@@ -125,7 +126,7 @@ export function dialog({ title, body, buttons = [], onMount }) {
 
         overlay.addEventListener('click', (event) => {
             // closest(): der Klick trifft meist das <svg> im Button, nicht ihn selbst.
-            if (event.target === overlay || event.target.closest('[data-close]')) close(null);
+            if ((backdropClose && event.target === overlay) || event.target.closest('[data-close]')) close(null);
         });
         document.addEventListener('keydown', onKey);
         document.body.append(overlay);
@@ -257,7 +258,9 @@ export async function saveDialog({
         },
     });
 
-    const outcome = await dialog({ title, body, buttons });
+    // Formulare schließen nicht per Klick daneben – sonst gehen Eingaben aus
+    // Versehen verloren.
+    const outcome = await dialog({ title, body, buttons, backdropClose: false });
 
     if (outcome === '__removed') return 'removed';
     if (typeof outcome === 'string' && outcome.startsWith('__action:')) return outcome.slice(9);

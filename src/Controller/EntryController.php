@@ -64,6 +64,7 @@ final class EntryController
         $end = $v->timestamp('ended_at', false);
         $durationMin = $v->int('duration_min', false, 0, 60 * 24 * 7);
         $note = $v->string('note', false, 20000, '');
+        $internalNote = $v->string('internal_note', false, 20000, '');
         $type = $v->enum('type', ['time', 'expense'], false, 'time');
         $billable = $v->bool('billable', true);
         $round = $v->bool('round', true);
@@ -82,6 +83,7 @@ final class EntryController
             'started_at'    => (int) $start,
             'ended_at'      => $end,
             'note'          => (string) $note,
+            'internal_note' => (string) $internalNote,
             'type'          => (string) $type,
             'billable'      => (bool) $billable,
             'round'         => (bool) $round,
@@ -122,6 +124,9 @@ final class EntryController
         if ($v->has('note')) {
             $data['note'] = $v->string('note', false, 20000, '');
         }
+        if ($v->has('internal_note')) {
+            $data['internal_note'] = $v->string('internal_note', false, 20000, '');
+        }
         if ($v->has('billable')) {
             $data['billable'] = $v->bool('billable', true);
         }
@@ -151,12 +156,13 @@ final class EntryController
      * Sammelbearbeitung. `rate_mode`: keep = Satz behalten, inherit = aus
      * der Stammdaten-Hierarchie (ggf. des neuen Teilprojekts) übernehmen,
      * fixed = `rate` für alle setzen. `billed`: true = abrechnen,
-     * false = wieder öffnen.
+     * false = wieder öffnen. `internal_note` (+ `internal_note_mode`
+     * replace|append) setzt die interne Notiz, auch an abgerechneten Einträgen.
      */
     public static function batch(Request $req): array
     {
         // Nur was sich sinnvoll für viele Einträge gleichzeitig setzen lässt.
-        $allowed = ['ids', 'subproject_id', 'rate_mode', 'rate', 'billable', 'billed'];
+        $allowed = ['ids', 'subproject_id', 'rate_mode', 'rate', 'billable', 'billed', 'internal_note', 'internal_note_mode'];
         $unknown = array_diff(array_keys($req->body), $allowed);
         if ($unknown !== []) {
             throw HttpException::badRequest(
@@ -184,6 +190,12 @@ final class EntryController
         }
         if ($v->has('billable')) {
             $data['billable'] = $v->bool('billable', true);
+        }
+        // Interne Notiz: ersetzen (leer = löschen) oder anhängen. Gilt auch für
+        // abgerechnete Einträge.
+        if ($v->has('internal_note')) {
+            $data['internal_note'] = $v->string('internal_note', false, 20000, '');
+            $data['internal_note_mode'] = $v->enum('internal_note_mode', ['replace', 'append'], false, 'replace');
         }
         // Status: true = abgerechnet, false = offen, fehlt = unverändert.
         $billed = $v->has('billed') ? $v->bool('billed', null) : null;
@@ -313,6 +325,7 @@ final class EntryController
             'subproject_id' => isset($q['subproject_id']) ? (int) $q['subproject_id'] : null,
             'q'             => (string) ($q['q'] ?? ''),
             'billed'        => self::tribool($q['billed'] ?? null),
+            'uncovered'     => self::tribool($q['uncovered'] ?? null) === true,
             'archived'      => self::tribool($q['archived'] ?? null),
             'billable'      => self::tribool($q['billable'] ?? null),
             'type'          => $q['type'] ?? null,

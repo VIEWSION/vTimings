@@ -5,6 +5,8 @@ import { api } from '../api.js';
 import { state, loadTree, loadSettings, invalidateTree, flatSubprojects, byActivity } from '../store.js';
 import { t } from '../i18n.js';
 import { enhanceCombos } from '../combo.js';
+import { enhanceDates } from '../dates.js';
+import { enhanceClearables } from '../clearable.js';
 import { icon } from '../icons.js';
 import { loadPref, savePref } from '../prefs.js';
 import { bindOnce, confirmDialog, pickSubproject, saveDialog, toast, toastError } from '../ui.js';
@@ -181,40 +183,41 @@ export const entriesView = {
                             </label>
                             <label class="field field--inline">
                                 <span class="field__label">${t('common.from')}</span>
-                                <input class="input" type="date" name="from" value="${filters.from}">
+                                <input class="input" type="date" data-clearable name="from" value="${filters.from}">
                             </label>
                             <label class="field field--inline">
                                 <span class="field__label">${t('common.to')}</span>
-                                <input class="input" type="date" name="to" value="${filters.to}">
+                                <input class="input" type="date" data-clearable name="to" value="${filters.to}">
                             </label>
                         </span>
                         ${showClientFilter() ? html`
                             <label class="field field--inline field--grow">
                                 <span class="field__label">${t('common.client')}</span>
-                                <select class="input" name="client_id" multiple data-combo
+                                <select class="input" name="client_id" multiple data-combo data-clearable
                                     data-placeholder="${t('entries.allClients')}"></select>
                             </label>` : ''}
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.project')}</span>
-                            <select class="input" name="project_id" multiple data-combo
+                            <select class="input" name="project_id" multiple data-combo data-clearable
                                 data-placeholder="${t('entries.allProjects')}"></select>
                         </label>
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.subproject')}</span>
-                            <select class="input" name="subproject_id" data-combo></select>
+                            <select class="input" name="subproject_id" data-combo data-clearable></select>
                         </label>
                     </div>
                     <div class="filters__row">
                         <label class="field field--inline field--grow">
                             <span class="field__label">${t('common.search')}</span>
-                            <input class="input" type="search" name="q" value="${filters.q}"
+                            <input class="input" type="search" name="q" data-clearable value="${filters.q}"
                                 placeholder="${t('entries.searchPlaceholder')}">
                         </label>
                         <label class="field field--inline">
                             <span class="field__label">${t('common.status')}</span>
-                            <select class="input" name="billed">
+                            <select class="input" name="billed" data-clearable>
                                 <option value="">${t('common.all')}</option>
                                 <option value="0">${t('common.billedOpen')}</option>
+                                ${canEdit() ? html`<option value="uncovered">${t('entries.statusUncovered')}</option>` : ''}
                                 <option value="1">${t('common.billedDone')}</option>
                             </select>
                         </label>
@@ -253,6 +256,8 @@ export const entriesView = {
         await loadFacets();
         fillFilters(root);
         enhanceCombos(root);
+        enhanceDates(root);
+        enhanceClearables(root);
         bind(root);
         if (mode === 'calendar') applyCalendarRange(root);
         await refresh(root);
@@ -861,7 +866,7 @@ async function refresh(root) {
     const ticket = ++generation;
 
     try {
-        if (mode === 'stats') return await refreshStats(host);
+        if (mode === 'stats') return await refreshStats(host, ticket);
 
         const data = await api.get('/entries', {
             ...queryFilters(),
@@ -1045,13 +1050,15 @@ function selectRange(fromId, toId, on) {
  * Der Papierkorb hat keine Summen: die zählen nur, was auch abgerechnet
  * werden kann.
  */
-async function refreshStats(host) {
+async function refreshStats(host, ticket) {
     if (filters.trashed === '1') {
         host.innerHTML = html`<div class="card"><p class="muted card__body">${t('entries.statsTrash')}</p></div>`;
         return;
     }
 
     const data = await api.get('/stats', { ...queryFilters(), group_by: groupBy });
+    // Schnell wechselnde Filter: nur die jüngste Antwort zeichnet.
+    if (ticket !== generation) return;
     lastTotals = data.totals;
     host.innerHTML = html`
         ${summary(data)}
@@ -1130,7 +1137,10 @@ function syncSelection(root) {
 
 /** Filter in der Form, die /stats, /report und /export erwarten. */
 function queryFilters() {
-    const { trashed, archived, ...rest } = filters;
+    const { trashed, archived, billed, ...rest } = filters;
+    // „offen, nicht gedeckt“ ist für die API „offen“ plus der Schalter uncovered.
+    if (billed === 'uncovered') Object.assign(rest, { billed: '0', uncovered: '1' });
+    else rest.billed = billed;
     // Archivierte Kunden/Projekte gelten nur für Administratoren als Schalter.
     return canEdit() ? { ...rest, archived: archived === '1' ? '1' : '0' } : rest;
 }
@@ -1189,12 +1199,78 @@ function summary(data) {
             ${data.totals.amount !== undefined
                 ? html`<span><strong>${money(data.totals.amount)}</strong></span>` : ''}
             <span class="muted">${count(data.totals.entries)} ${t('common.entries')}</span>
+            ${data.totals.open_minutes > 0
+                && (data.totals.open_minutes !== data.totals.minutes || data.totals.uncovered_minutes !== undefined) ? html`
+                <span class="summary__open" title="${t('entries.openSumHint')}">
+                    <span class="muted">${t('common.billedOpen')}:</span>
+                    <strong>${data.totals.open_hhmm}</strong> <span class="muted">${t('common.hours')}</span>
+                    ${data.totals.open_amount !== undefined
+                        ? html`<strong>${money(data.totals.open_amount)}</strong>` : ''}
+                </span>` : ''}
+            ${data.totals.uncovered_minutes > 0 ? html`
+                <span class="summary__uncovered" title="${t('entries.uncoveredHint')}">
+                    <span class="muted">${t('entries.uncovered')}:</span>
+                    <strong>${data.totals.uncovered_hhmm}</strong> <span class="muted">${t('common.hours')}</span>
+                </span>` : ''}
+            ${budgetLines()}
             ${loaded.size < total ? html`
                 <span class="summary__partial">
                     ${t('entries.countOf', { shown: count(loaded.size), total: count(total) })}
                     ${mode === 'list' ? html`
                         <button type="button" class="chip" data-more="all">${t('entries.loadAllShort')}</button>` : ''}
                 </span>` : ''}
+        </div>`;
+}
+
+/**
+ * Kontingente, die zum aktuellen Filter passen – nur bei genau einem Kunden,
+ * sonst ließe sich kein Stand sinnvoll nennen. Mit Projektauswahl zählt je
+ * Projekt das eigene Kontingent, ersatzweise das des Kunden; ohne alle des
+ * Kunden. Der Stand gilt insgesamt und folgt nicht dem Datumsfilter.
+ */
+function budgetPools() {
+    if (filters.trashed === '1') return [];
+    const clients = state.tree?.clients || [];
+    const picked = idList(filters.client_id);
+    const client = picked.length === 1 ? clients.find((c) => String(c.id) === picked[0])
+        : (!picked.length && clients.length === 1 ? clients[0] : null);
+    if (!client) return [];
+
+    const projectIds = idList(filters.project_id);
+    const pools = projectIds.length
+        ? projectIds.map((id) => {
+            const project = client.projects.find((p) => String(p.id) === id);
+            return project ? (project.budget || client.budget) : null;
+        })
+        : [client.budget, ...client.projects.map((p) => p.budget)];
+
+    const seen = new Set();
+    return pools.filter((pool) => pool && !seen.has(pool.key) && seen.add(pool.key));
+}
+
+function budgetLines() {
+    const pools = budgetPools();
+    if (!pools.length) return '';
+    const many = pools.length > 1;
+
+    return html`
+        <div class="summary__budgets" title="${t('entries.budgetHint')}">
+            ${pools.map((pool) => {
+                const p = pool.progress;
+                return html`
+                    <div class="summary__budget">
+                        <span class="muted">${many ? (pool.project_name || t('budget.allProjects')) : t('budget.package')}</span>
+                        <span class="progress" title="${t('budget.currentTitle', {
+                            used: decimal(p.used_hours), hours: decimal(p.budget_hours) })}">
+                            <span class="progress__bar ${p.percent > 100 ? 'is-over' : ''}"
+                                  style="width:${Math.min(100, p.percent)}%"></span>
+                        </span>
+                        <span>${t('budget.usedOf', { used: decimal(p.used_hours), hours: decimal(p.budget_hours) })}</span>
+                        ${pool.balance_hours < 0
+                            ? html`<strong class="is-over">${t('budget.overdrawn', { hours: decimal(-pool.balance_hours) })}</strong>`
+                            : html`<span class="muted">${t('budget.balance', { hours: decimal(pool.balance_hours) })}</span>`}
+                    </div>`;
+            })}
         </div>`;
 }
 
@@ -1223,7 +1299,7 @@ function row(entry) {
     const open = canEdit() && !entry.deleted_at;
 
     return html`
-        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${entry.archived ? 'entry--archived' : ''} ${check ? 'entry--check' : ''} ${open ? 'entry--open' : ''}"
+        <li class="entry ${entry.billed ? 'entry--billed' : ''} ${!entry.billed && entry.cover === 'covered' ? 'entry--covered' : ''} ${entry.archived ? 'entry--archived' : ''} ${check ? 'entry--check' : ''} ${open ? 'entry--open' : ''}"
             ${open ? { __raw: `data-edit="${entry.id}" tabindex="0"` } : ''}>
             ${check ? html`
                 <label class="check entry__check" title="${t('batch.selectEntry')}">
@@ -1241,6 +1317,8 @@ function row(entry) {
                     ${entry.archived ? html`<span class="row__tag">${t('master.archivedTag')}</span>` : ''}
                 </span>
                 ${entry.note ? html`<span class="entry__note">${entry.note}</span>` : ''}
+                ${entry.internal_note ? html`<span class="entry__internal" title="${t('entries.internalNote')}">
+                    ${icon('lock', 12)}<span>${entry.internal_note}</span></span>` : ''}
             </span>
             <span class="entry__dur">
                 ${billedMark(entry, { open: true })}${entry.hhmm}
@@ -1262,8 +1340,10 @@ function row(entry) {
 
 /**
  * Mehrere Einträge auf einmal ändern: verschieben, Stundensatz, abrechenbar,
- * Status. Zeiten, Dauer und Notizen gibt es hier bewusst nicht – die sind je
- * Eintrag verschieden, und der Server nimmt sie in diesem Weg auch nicht an.
+ * Status, interne Notiz. Zeiten, Dauer und die (öffentliche) Notiz gibt es hier
+ * bewusst nicht – die sind je Eintrag verschieden, und der Server nimmt sie in
+ * diesem Weg auch nicht an. Die interne Notiz dagegen darf bewusst an vielen
+ * Einträgen gleich sein („verrechnet mit …“).
  */
 async function batchEdit(root) {
     // Abgerechnete Einträge sind gesperrt. Sie dürfen trotzdem in der Auswahl
@@ -1320,7 +1400,28 @@ async function batchEdit(root) {
                 </select>
             </label>
         </div>
-        <p class="muted" data-lock-hint hidden>${t('batch.billLocks')}</p>`;
+        <p class="muted" data-lock-hint hidden>${t('batch.billLocks')}</p>
+        <div class="field">
+            <span class="field__label">${icon('lock', 12)} ${t('entries.internalNote')}</span>
+            <div class="filters__row">
+                <select class="input" name="internal_mode">
+                    <option value="">${t('batch.keep')}</option>
+                    <option value="replace">${t('batch.internalReplace')}</option>
+                    <option value="append">${t('batch.internalAppend')}</option>
+                    <option value="clear">${t('batch.internalClear')}</option>
+                </select>
+            </div>
+            <textarea class="input" name="internal_note" rows="2" hidden
+                placeholder="${t('entries.internalNoteHint')}"></textarea>
+            <span class="field__hint">${t('batch.internalHint')}</span>
+        </div>`;
+
+    const internalMode = node.querySelector('[name=internal_mode]');
+    const internalNote = node.querySelector('[name=internal_note]');
+    internalMode.addEventListener('change', () => {
+        internalNote.hidden = !['replace', 'append'].includes(internalMode.value);
+        if (!internalNote.hidden) internalNote.focus();
+    });
 
     const pick = node.querySelector('[data-pick]');
     const unpick = node.querySelector('[data-unpick]');
@@ -1408,6 +1509,13 @@ async function batchEdit(root) {
                 payload.billable = node.querySelector('[name=billable]').value === '1';
             }
             if (status.value !== '') payload.billed = status.value === '1';
+            if (internalMode.value === 'clear') {
+                payload.internal_note = '';
+            } else if (internalMode.value !== '') {
+                if (internalNote.value.trim() === '') throw new Error(t('batch.internalEmpty'));
+                payload.internal_note = internalNote.value;
+                payload.internal_note_mode = internalMode.value;
+            }
 
             if (Object.keys(payload).length === 1) throw new Error(t('batch.nothing'));
             return api.post('/entries/batch', payload);
@@ -1555,6 +1663,11 @@ async function editEntry(root, id, preset = null) {
             </label>
         </div>
         </fieldset>
+        <label class="field">
+            <span class="field__label">${icon('lock', 12)} ${t('entries.internalNote')}</span>
+            <textarea class="input" name="internal_note" rows="2"
+                placeholder="${t('entries.internalNoteHint')}">${entry?.internal_note ?? ''}</textarea>
+        </label>
         <div class="filters__row">
             <label class="field field--inline">
                 <span class="field__label">${t('batch.status')}</span>
@@ -1634,8 +1747,12 @@ async function editEntry(root, id, preset = null) {
         remove: id ? () => api.delete(`/entries/${id}`) : null,
         removeConfirm: { title: t('entries.deleteTitle'), text: t('entries.deleteText') },
         save: async () => {
-            // Bleibt abgerechnet: es gibt nichts zu speichern.
-            if (entry?.billed && status.value === '1') return 'unchanged';
+            // Bleibt abgerechnet: nur die interne Notiz lässt sich noch ändern.
+            if (entry?.billed && status.value === '1') {
+                if (get('internal_note').value === (entry.internal_note ?? '')) return 'unchanged';
+                await api.patch(`/entries/${id}`, { internal_note: get('internal_note').value });
+                return;
+            }
 
             const date = get('date').value;
             // Endzeit vor Startzeit heißt: über Mitternacht hinaus.
@@ -1646,6 +1763,7 @@ async function editEntry(root, id, preset = null) {
                 started_at: dateTimeToISO(date, get('start').value),
                 ended_at: dateTimeToISO(endDate, get('end').value),
                 note: get('note').value,
+                internal_note: get('internal_note').value,
                 billable: get('billable').checked,
                 round: get('round').checked,
                 rate: get('rate').value === '' ? null : Number(get('rate').value),

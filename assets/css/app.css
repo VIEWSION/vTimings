@@ -413,6 +413,15 @@ pre {
     color: var(--ok);
 }
 .billed-mark--open { background: none; box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+/* Durch ein Stundenpaket gedeckt, aber noch nicht abgerechnet: Ring in der
+   Akzentfarbe, gefüllt; „teilweise“ nur zur Hälfte. */
+.billed-mark--cover {
+    background: radial-gradient(circle, var(--accent) 0 28%, transparent 32%);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.billed-mark--partial {
+    background: linear-gradient(90deg, var(--accent) 0 50%, transparent 50%);
+}
 /* In der Liste steht das Symbol vor der Dauer, hier also etwas Abstand. */
 .entry__dur .billed-mark { margin-right: 0.35rem; vertical-align: -0.12rem; }
 
@@ -502,6 +511,13 @@ pre {
     --entry-border: color-mix(in srgb, var(--ok) 60%, var(--border));
 }
 
+.entry--covered { --entry-border: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.entry--covered { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.entry--covered:hover { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.entrylist--spaced .entry--covered.entry--open:not(.is-selected):hover {
+    --entry-border: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
 .entry--archived .entry__main, .entry--archived .dot { opacity: 0.6; }
 .entry--archived .dot { filter: grayscale(1); }
 .entry__path .row__count { flex: none; min-width: 1.4rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); font-size: 0.72rem; line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums; }
@@ -519,6 +535,16 @@ pre {
 .entry__path { font-weight: 550; }
 .entry__path .muted { font-weight: 400; font-size: 0.85rem; }
 .entry__note { font-size: 0.88rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.entry__internal {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+    font-style: italic;
+    color: var(--accent);
+    overflow-wrap: anywhere;
+}
+.entry__internal svg { flex: none; align-self: center; }
 .entry__dur {
     grid-area: dur;
     text-align: right;
@@ -668,6 +694,10 @@ pre {
 }
 .summary .check { align-self: center; margin-right: -0.75rem; }
 .summary strong { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+.summary__budgets { flex-basis: 100%; display: flex; flex-direction: column; gap: 0.35rem; padding-top: 0.5rem; border-top: 1px solid var(--border); font-size: 0.9rem; }
+.summary__budget { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; font-variant-numeric: tabular-nums; }
+.summary__budget .progress { width: 8rem; }
+.summary__open { display: inline-flex; align-items: baseline; gap: 0.35rem; }
 /* Nicht alles geladen: deutlich, damit "Gesamt" nicht still unvollständig ist. */
 .summary__partial {
     display: inline-flex;
@@ -1018,6 +1048,7 @@ pre {
 .field--grow { flex: 1 1 12rem; }
 .field__label { font-size: 0.78rem; font-weight: 600; line-height: 1.2; color: var(--text-muted); }
 .field__hint { font-size: 0.78rem; color: var(--text-muted); }
+.field__label:has(> svg) { display: flex; align-items: center; gap: 0.3rem; }
 
 /* Fehler stehen am Feld, nicht nur als Meldung am Bildschirmrand. */
 .field__error {
@@ -1049,6 +1080,51 @@ pre {
 .input:focus, .input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
 .input:disabled { opacity: 0.55; cursor: not-allowed; }
 textarea.input { min-height: 4rem; resize: vertical; line-height: 1.45; }
+
+/* Optionale Datumsfelder (dates.js): leer ein neutrales Muster statt „tt.mm.jjjj“,
+   dazu ein Knopf zum Leeren. Beim Fokus erscheinen die Felder zum Tippen. */
+.datefield { position: relative; display: block; }
+.datefield.is-empty .input:not(:focus)::-webkit-datetime-edit,
+.datefield.is-empty .input:not(:focus)::-webkit-datetime-edit-fields-wrapper,
+.datefield.is-empty .input:not(:focus)::-webkit-datetime-edit-text,
+.datefield.is-empty .input:not(:focus)::-webkit-datetime-edit-day-field,
+.datefield.is-empty .input:not(:focus)::-webkit-datetime-edit-month-field,
+.datefield.is-empty .input:not(:focus)::-webkit-datetime-edit-year-field { color: transparent; opacity: 0; }
+.datefield.is-empty::before {
+    content: attr(data-empty);
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+}
+.datefield:focus-within::before { display: none; }
+.field--clearable { position: relative; }
+/* Den Knopf zum Leeren liefert clearable.js – nicht zusätzlich den des Browsers. */
+.field--clearable input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+.field--clearable .field__label { display: flex; align-items: center; gap: 0.2rem; }
+.field__clear {
+    display: inline-grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    margin: -0.15rem 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.field__clear[hidden] { display: none; }
+.field__clear:hover, .field__clear:focus-visible { color: var(--danger); outline: none; }
+
+/* Filter gesetzt: kräftigere Beschriftung und Rahmen – man sieht sofort, was
+   eingeschränkt ist. */
+.field.is-filled .field__label { color: var(--text); font-weight: 700; }
+.field.is-filled .input:not(:focus):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 65%, var(--border-strong)); }
 
 /* Native Auswahllisten mit eigenem Pfeil – passend zu combo.js. */
 select.input {
@@ -1134,7 +1210,7 @@ input[type="color"].input { padding: 0.2rem; min-width: 3.5rem; }
     animation: pop-in 0.14s var(--ease);
 }
 .combo__search { flex: none; min-height: 2.25rem; }
-.combo__list { list-style: none; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; }
+.combo__list { position: relative; list-style: none; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; }
 .combo__item {
     display: flex;
     align-items: center;
@@ -1688,6 +1764,9 @@ tr.is-inactive { opacity: 0.5; }
 .table--stats { font-variant-numeric: tabular-nums; }
 .table--stats th, .table--stats td { padding: 0.45rem 0.75rem; }
 .table--stats .num { text-align: right; white-space: nowrap; }
+.num--warn { color: var(--danger); font-weight: 600; }
+.summary__uncovered { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.summary__uncovered strong { color: var(--danger); }
 .table--stats td:first-child { position: relative; }
 .table--stats tbody tr:hover { background: var(--surface-2); }
 

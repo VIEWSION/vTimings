@@ -200,12 +200,16 @@ DELETE /api/budgets/{id}/bill          Abrechnung des zuletzt abgerechneten Pake
 GET    /api/entries?from&to&client_id&project_id&q&billed&archived&group=day
                                        client_id/project_id auch als Liste (1,2,3);
                                        archived=0 blendet Einträge archivierter
-                                       Kunden/Projekte aus (ohne Angabe: alle)
+                                       Kunden/Projekte aus (ohne Angabe: alle);
+                                       uncovered=1 (nur Admin): offen, abrechenbar und
+                                       von keinem Stundenpaket gedeckt
 POST   /api/entries
 PATCH  /api/entries/{id}               billed: true|false setzt den Status (s. u.)
 POST   /api/entries/batch              { ids, subproject_id?, rate_mode?: keep|inherit|fixed,
                                          rate?, billable?, billed?: true|false }
-                                         – keine Zeiten/Notizen. billed=false öffnet
+                                         internal_note?, internal_note_mode?: replace|append
+                                         – keine Zeiten/Notizen (die interne Notiz schon,
+                                         auch an abgerechneten). billed=false öffnet
                                          abgerechnete Einträge wieder (nicht mit Rechnung),
                                          sonst bleiben sie gesperrt und werden übersprungen
 DELETE /api/entries/{id}               Papierkorb

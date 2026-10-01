@@ -305,6 +305,49 @@ final class BudgetRepo
         return count($entries);
     }
 
+    // -- Deckung durch Pakete -------------------------------------------------
+
+    /** Wurde die Hilfstabelle in dieser Anfrage schon gefüllt? */
+    private static bool $coverReady = false;
+
+    /**
+     * Füllt `temp.entry_cover` (Eintrag → Minuten, die kein Paket abdeckt) für
+     * alle Einträge, die in einem Kontingent verrechnet werden. Einträge ohne
+     * Zeile gehören zu keinem Kontingent (oder liegen vor dem ersten Paket) –
+     * für sie gilt ihre volle Dauer als nicht gedeckt, siehe EntryRepo.
+     *
+     * Die Tabelle ist je Verbindung temporär; so rechnen Summen, Gruppen und
+     * der Filter „nicht gedeckt“ in SQL exakt über denselben Stand wie die
+     * Kontingentansicht, ohne die Verrechnung zu duplizieren.
+     */
+    public static function prepareCover(): void
+    {
+        if (self::$coverReady) {
+            return;
+        }
+        Database::run('CREATE TEMP TABLE IF NOT EXISTS entry_cover (
+            entry_id INTEGER PRIMARY KEY, uncovered_min INTEGER NOT NULL) WITHOUT ROWID');
+        Database::run('DELETE FROM temp.entry_cover');
+
+        Database::transaction(static function (): void {
+            foreach (self::states(null) as $state) {
+                foreach ($state['allocation'] as $entry) {
+                    $over = 0;
+                    foreach ($entry['parts'] as [$target, $minutes]) {
+                        if ($target === 'over') {
+                            $over += $minutes;
+                        }
+                    }
+                    Database::run(
+                        'INSERT OR REPLACE INTO temp.entry_cover (entry_id, uncovered_min) VALUES (:id, :m)',
+                        ['id' => $entry['id'], 'm' => $over]
+                    );
+                }
+            }
+        });
+        self::$coverReady = true;
+    }
+
     // -- Verrechnung --------------------------------------------------------
 
     /** @return list<array<string,mixed>> Rechenstand je Kontingent */

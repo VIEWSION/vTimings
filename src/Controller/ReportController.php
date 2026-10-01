@@ -43,8 +43,19 @@ final class ReportController
             'decimal' => Clock::decimal($minutes),
             'entries' => $entries,
         ];
+        $openMinutes = (int) array_sum(array_column($groups, 'open_minutes'));
+        $totals['open_minutes'] = $openMinutes;
+        $totals['open_hhmm'] = Clock::hhmm($openMinutes);
+        $totals['open_decimal'] = Clock::decimal($openMinutes);
+        if (isset($groups[0]['uncovered_minutes'])) {
+            $uncovered = (int) array_sum(array_column($groups, 'uncovered_minutes'));
+            $totals['uncovered_minutes'] = $uncovered;
+            $totals['uncovered_hhmm'] = Clock::hhmm($uncovered);
+            $totals['uncovered_decimal'] = Clock::decimal($uncovered);
+        }
         if (\VT\Repo\Scope::current()->showCosts) {
             $totals['amount'] = round(array_sum(array_map(static fn($g) => $g['amount'] ?? 0, $groups)), 2);
+            $totals['open_amount'] = round(array_sum(array_map(static fn($g) => $g['open_amount'] ?? 0, $groups)), 2);
         }
 
         return ['group_by' => $by, 'groups' => $groups, 'totals' => $totals];
@@ -133,6 +144,7 @@ final class ReportController
                 ? in_array((string) $q['archived'], ['1', 'true'], true) : null,
             'billable'      => isset($q['billable']) && $q['billable'] !== ''
                 ? in_array((string) $q['billable'], ['1', 'true'], true) : null,
+            'uncovered'     => in_array((string) ($q['uncovered'] ?? ''), ['1', 'true'], true) ?: null,
             'type'          => $q['type'] ?? null,
             'ids'           => self::ids($q['ids'] ?? null),
         ], static fn($value) => $value !== null && $value !== '');
